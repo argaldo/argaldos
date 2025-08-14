@@ -127,41 +127,48 @@ uint8_t* read_file(char* filename, uint8_t* buffer, int size) {
 }
 
 EBPB read_ebpb() {
-           kdebug("[FAT32] read_ebpb\n");
-           char* sector_zero_array = readdisk(0);
-           uint8_t sector_zero[512];
-           memcpy(sector_zero,sector_zero_array,512);
-           EBPB ebpb;
-           for(int i=0;i<2;i++) { ebpb.jmp_code[i] = sector_zero[i]; }
-           for(int i=0;i<8;i++) { ebpb.OEM_identifier[i] = sector_zero[i+EBPB_OEM_IDENTIFIER_OFFSET]; } ebpb.OEM_identifier[8] = 0x00;
-           ebpb.bytes_per_sector = ((uint16_t)sector_zero[EBPB_NUMBER_BYTES_PER_SECTOR_OFFSET+1]<<8) | sector_zero[EBPB_NUMBER_BYTES_PER_SECTOR_OFFSET];
-           ebpb.sectors_per_cluster = sector_zero[EBPB_SECTORS_PER_CLUSTER_OFFSET];
-           ebpb.reserved_sectors = ((uint16_t)sector_zero[EBPB_RESERVED_SECTORS_OFFSET + 1]<<8 | sector_zero[EBPB_RESERVED_SECTORS_OFFSET]);
-           ebpb.number_of_FAT = sector_zero[EBPB_NUMBER_FAT_OFFSET];
-           ebpb.number_of_root_dir_entries = ((uint16_t)sector_zero[EBPB_NUMBER_ROOT_ENTRIES_OFFSET+1]<<8 | sector_zero[EBPB_NUMBER_ROOT_ENTRIES_OFFSET]);
-           ebpb.total_sectors_logical_volume = ((uint16_t)sector_zero[EBPB_TOTAL_SECTORS_LOGICAL_VOLUME_OFFSET+1]<<8 | sector_zero[EBPB_TOTAL_SECTORS_LOGICAL_VOLUME_OFFSET]);
-           ebpb.data_media_descriptor = sector_zero[EBPB_DATA_MEDIA_DESCRIPTOR_OFFSET];
-           ebpb.number_of_sectors_per_FAT = ((uint16_t)sector_zero[EBPB_NUMBER_SECTORS_PER_FAT_OFFSET+1]<<8 | sector_zero[EBPB_NUMBER_SECTORS_PER_FAT_OFFSET]);
-           ebpb.number_of_sectors_per_track = ((uint16_t)sector_zero[EBPB_NUMBER_SECTORS_PER_TRACK_OFFSET+1]<<8 | sector_zero[EBPB_NUMBER_SECTORS_PER_TRACK_OFFSET]);
-           ebpb.number_of_heads = ((uint16_t)sector_zero[EBPB_NUMBER_HEADS_OFFSET+1]<<8 | sector_zero[EBPB_NUMBER_HEADS_OFFSET]);
-           ebpb.number_of_hidden_sectors = combine32bit(sector_zero[EBPB_NUMBER_HIDDEN_SECTORS_OFFSET + 3],sector_zero[EBPB_NUMBER_HIDDEN_SECTORS_OFFSET + 2],sector_zero[EBPB_NUMBER_HIDDEN_SECTORS_OFFSET + 1],sector_zero[EBPB_NUMBER_HIDDEN_SECTORS_OFFSET]);
-           ebpb.sectors_per_FAT = ((uint16_t)sector_zero[EBPB_SECTORS_PER_FAT_OFFSET + 1]<<8 | sector_zero[EBPB_SECTORS_PER_FAT_OFFSET]);
-           ebpb.large_sector_count = combine32bit(sector_zero[EBPB_LARGE_SECTOR_COUNT_OFFSET + 3],sector_zero[EBPB_LARGE_SECTOR_COUNT_OFFSET + 2],sector_zero[EBPB_LARGE_SECTOR_COUNT_OFFSET + 1],sector_zero[EBPB_LARGE_SECTOR_COUNT_OFFSET]);
-           ebpb.flags= ((uint16_t)sector_zero[EBPB_FLAGS_OFFSET+1]<<8 | sector_zero[EBPB_FLAGS_OFFSET]);
-           ebpb.version_number = ((uint16_t)sector_zero[EBPB_FAT_VERSION_NUMBER_OFFSET+1]<<8 | sector_zero[EBPB_FAT_VERSION_NUMBER_OFFSET]);
-           ebpb.cluster_number_of_root_directory = combine32bit(sector_zero[EBPB_CLUSTER_NUMBER_ROOT_DIRECTORY_OFFSET + 3],sector_zero[EBPB_CLUSTER_NUMBER_ROOT_DIRECTORY_OFFSET + 2],sector_zero[EBPB_CLUSTER_NUMBER_ROOT_DIRECTORY_OFFSET + 1],sector_zero[EBPB_CLUSTER_NUMBER_ROOT_DIRECTORY_OFFSET]);
-           ebpb.sector_number_of_FSInfo_structure = ((uint16_t)sector_zero[EBPB_SECTOR_NUMBER_FSINFO_STRUCTURE_OFFSET+1]<<8 | sector_zero[EBPB_SECTOR_NUMBER_FSINFO_STRUCTURE_OFFSET]);
-           ebpb.sector_number_of_backup_boot_sector = ((uint16_t)sector_zero[EBPB_SECTOR_NUMBER_BACKUP_SECTOR_OFFSET+1]<<8 | sector_zero[EBPB_SECTOR_NUMBER_BACKUP_SECTOR_OFFSET]);
-           for(int i=0;i<12;i++) { ebpb.reserved[i] = sector_zero[i + EBPB_RESERVED_OFFSET]; }
-           ebpb.drive_number = sector_zero[EBPB_DRIVE_NUMBER_OFFSET];
-           ebpb.nt_flags = sector_zero[EBPB_NT_FLAGS_OFFSET];
-           ebpb.signature = sector_zero[EBPB_SIGNATURE_OFFSET];
-           ebpb.volume_id_serial_number = combine32bit(sector_zero[EBPB_VOLUME_ID_SERIAL_NUMBER_OFFSET + 3],sector_zero[EBPB_VOLUME_ID_SERIAL_NUMBER_OFFSET + 2],sector_zero[EBPB_VOLUME_ID_SERIAL_NUMBER_OFFSET + 1],sector_zero[EBPB_VOLUME_ID_SERIAL_NUMBER_OFFSET]);
-           for(int i=0;i<11;i++) { ebpb.volume_label_string[i] = sector_zero[i+EBPB_VOLUME_LABEL_STRING_OFFSET]; } ebpb.volume_label_string[11] = 0x00;
-           for(int i=0;i<8;i++) { ebpb.system_identifier[i] = sector_zero[i+EBPB_SYSTEM_IDENTIFIER_OFFSET]; } ebpb.system_identifier[8] = 0x00;
-           ebpb.populated = true;
-           fat.ebpb = ebpb;
-           return fat.ebpb;
+    kdebug("[FAT32] read_ebpb\n");
+    char* sector_zero_array = readdisk(0);
+    if (!sector_zero_array) {
+        kdebug("[FAT32] ERROR: Failed to read sector 0 from disk!\n");
+        EBPB ebpb = {0};
+        ebpb.populated = false;
+        fat.ebpb = ebpb;
+        return fat.ebpb;
+    }
+    uint8_t sector_zero[512];
+    memcpy(sector_zero, sector_zero_array, 512);
+    EBPB ebpb;
+    for (int i = 0; i < 2; i++) { ebpb.jmp_code[i] = sector_zero[i]; }
+    for (int i = 0; i < 8; i++) { ebpb.OEM_identifier[i] = sector_zero[i + EBPB_OEM_IDENTIFIER_OFFSET]; } ebpb.OEM_identifier[8] = 0x00;
+    ebpb.bytes_per_sector = ((uint16_t)sector_zero[EBPB_NUMBER_BYTES_PER_SECTOR_OFFSET + 1] << 8) | sector_zero[EBPB_NUMBER_BYTES_PER_SECTOR_OFFSET];
+    ebpb.sectors_per_cluster = sector_zero[EBPB_SECTORS_PER_CLUSTER_OFFSET];
+    ebpb.reserved_sectors = ((uint16_t)sector_zero[EBPB_RESERVED_SECTORS_OFFSET + 1] << 8 | sector_zero[EBPB_RESERVED_SECTORS_OFFSET]);
+    ebpb.number_of_FAT = sector_zero[EBPB_NUMBER_FAT_OFFSET];
+    ebpb.number_of_root_dir_entries = ((uint16_t)sector_zero[EBPB_NUMBER_ROOT_ENTRIES_OFFSET + 1] << 8 | sector_zero[EBPB_NUMBER_ROOT_ENTRIES_OFFSET]);
+    ebpb.total_sectors_logical_volume = ((uint16_t)sector_zero[EBPB_TOTAL_SECTORS_LOGICAL_VOLUME_OFFSET + 1] << 8 | sector_zero[EBPB_TOTAL_SECTORS_LOGICAL_VOLUME_OFFSET]);
+    ebpb.data_media_descriptor = sector_zero[EBPB_DATA_MEDIA_DESCRIPTOR_OFFSET];
+    ebpb.number_of_sectors_per_FAT = ((uint16_t)sector_zero[EBPB_NUMBER_SECTORS_PER_FAT_OFFSET + 1] << 8 | sector_zero[EBPB_NUMBER_SECTORS_PER_FAT_OFFSET]);
+    ebpb.number_of_sectors_per_track = ((uint16_t)sector_zero[EBPB_NUMBER_SECTORS_PER_TRACK_OFFSET + 1] << 8 | sector_zero[EBPB_NUMBER_SECTORS_PER_TRACK_OFFSET]);
+    ebpb.number_of_heads = ((uint16_t)sector_zero[EBPB_NUMBER_HEADS_OFFSET + 1] << 8 | sector_zero[EBPB_NUMBER_HEADS_OFFSET]);
+    ebpb.number_of_hidden_sectors = combine32bit(sector_zero[EBPB_NUMBER_HIDDEN_SECTORS_OFFSET + 3], sector_zero[EBPB_NUMBER_HIDDEN_SECTORS_OFFSET + 2], sector_zero[EBPB_NUMBER_HIDDEN_SECTORS_OFFSET + 1], sector_zero[EBPB_NUMBER_HIDDEN_SECTORS_OFFSET]);
+    ebpb.sectors_per_FAT = ((uint16_t)sector_zero[EBPB_SECTORS_PER_FAT_OFFSET + 1] << 8 | sector_zero[EBPB_SECTORS_PER_FAT_OFFSET]);
+    ebpb.large_sector_count = combine32bit(sector_zero[EBPB_LARGE_SECTOR_COUNT_OFFSET + 3], sector_zero[EBPB_LARGE_SECTOR_COUNT_OFFSET + 2], sector_zero[EBPB_LARGE_SECTOR_COUNT_OFFSET + 1], sector_zero[EBPB_LARGE_SECTOR_COUNT_OFFSET]);
+    ebpb.flags = ((uint16_t)sector_zero[EBPB_FLAGS_OFFSET + 1] << 8 | sector_zero[EBPB_FLAGS_OFFSET]);
+    ebpb.version_number = ((uint16_t)sector_zero[EBPB_FAT_VERSION_NUMBER_OFFSET + 1] << 8 | sector_zero[EBPB_FAT_VERSION_NUMBER_OFFSET]);
+    ebpb.cluster_number_of_root_directory = combine32bit(sector_zero[EBPB_CLUSTER_NUMBER_ROOT_DIRECTORY_OFFSET + 3], sector_zero[EBPB_CLUSTER_NUMBER_ROOT_DIRECTORY_OFFSET + 2], sector_zero[EBPB_CLUSTER_NUMBER_ROOT_DIRECTORY_OFFSET + 1], sector_zero[EBPB_CLUSTER_NUMBER_ROOT_DIRECTORY_OFFSET]);
+    ebpb.sector_number_of_FSInfo_structure = ((uint16_t)sector_zero[EBPB_SECTOR_NUMBER_FSINFO_STRUCTURE_OFFSET + 1] << 8 | sector_zero[EBPB_SECTOR_NUMBER_FSINFO_STRUCTURE_OFFSET]);
+    ebpb.sector_number_of_backup_boot_sector = ((uint16_t)sector_zero[EBPB_SECTOR_NUMBER_BACKUP_SECTOR_OFFSET + 1] << 8 | sector_zero[EBPB_SECTOR_NUMBER_BACKUP_SECTOR_OFFSET]);
+    for (int i = 0; i < 12; i++) { ebpb.reserved[i] = sector_zero[i + EBPB_RESERVED_OFFSET]; }
+    ebpb.drive_number = sector_zero[EBPB_DRIVE_NUMBER_OFFSET];
+    ebpb.nt_flags = sector_zero[EBPB_NT_FLAGS_OFFSET];
+    ebpb.signature = sector_zero[EBPB_SIGNATURE_OFFSET];
+    ebpb.volume_id_serial_number = combine32bit(sector_zero[EBPB_VOLUME_ID_SERIAL_NUMBER_OFFSET + 3], sector_zero[EBPB_VOLUME_ID_SERIAL_NUMBER_OFFSET + 2], sector_zero[EBPB_VOLUME_ID_SERIAL_NUMBER_OFFSET + 1], sector_zero[EBPB_VOLUME_ID_SERIAL_NUMBER_OFFSET]);
+    for (int i = 0; i < 11; i++) { ebpb.volume_label_string[i] = sector_zero[i + EBPB_VOLUME_LABEL_STRING_OFFSET]; } ebpb.volume_label_string[11] = 0x00;
+    for (int i = 0; i < 8; i++) { ebpb.system_identifier[i] = sector_zero[i + EBPB_SYSTEM_IDENTIFIER_OFFSET]; } ebpb.system_identifier[8] = 0x00;
+    ebpb.populated = true;
+    fat.ebpb = ebpb;
+    return fat.ebpb;
 }
 
 void print_fat32_ebpb() {
