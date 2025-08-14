@@ -52,17 +52,23 @@ bool identifyInitiate() {
     kdebug("Initiating drive...\n");
     port_byte_out(0x3F6, 0); // Reset the drive
     // Double check that it's compatible still.
-    identifyCompatibility();
-    // Keep polling until one of the status ports are bit 3 or until bit 0 sets.
-    while (((port_byte_in(0x1F7) & 8) >> 3) == 0 && ((port_byte_in(0x1F7) & 1) >> 0) == 0);
+    if (!identifyCompatibility()) {
+        kdebug("Drive not compatible during initiate.\n");
+        return false;
+    }
+    int poll_limit = 1000000;
+    while (((port_byte_in(0x1F7) & 8) >> 3) == 0 && ((port_byte_in(0x1F7) & 1) >> 0) == 0 && --poll_limit > 0);
+    if (poll_limit == 0) {
+        kdebug("Timeout waiting for drive ready.\n");
+        return false;
+    }
     // Now it's either returned an error or success.
     if (((port_byte_in(0x1F7) & 1) >> 0) != 0) {
         kdebug("Error flag set.\n");
         return false; // Error
-    } else {
-        kdebug("Ready to read/write disk.\n");
-        return true; // It's ready to read from the data port
     }
+    kdebug("Ready to read/write disk.\n");
+    return true; // It's ready to read from the data port
 }
 
 

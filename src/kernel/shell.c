@@ -49,10 +49,14 @@ bool process_command(char *input) {
         } else if (strcmp(input,"fat")) {
             print_fat32_ebpb();
         } else if (strcmp(input,"run")) {
-            uint8_t* ptr = (uint8_t*) kmalloc();
+            uint8_t* ptr = (uint8_t*) kmalloc(3);
+            if (!ptr) {
+                printk("ERROR: kmalloc failed for run command\n");
+                return false;
+            }
             uint8_t code[] = {0xcd,0x80,0xc3};
-            memcpy(ptr + kernel.hhdm,code,3);
-            int (*elf_entry_point)(void) = (int(*)(void))(ptr+kernel.hhdm);
+            memcpy(ptr + kernel.hhdm, code, sizeof(code));
+            int (*elf_entry_point)(void) = (int(*)(void))(ptr + kernel.hhdm);
             elf_entry_point();
         } else if (strcmp(input,"serial")) {
                 if (kernel.serial_output) {
@@ -89,10 +93,13 @@ bool process_command(char *input) {
         } else if (strcmp(input,"usb reset")) {
             uhci_reset();
         } else if (strcmp(input,"kmalloc")) {
-            uint8_t* ptr;
-            ptr = (uint8_t*) kmalloc();
-            char buf[9];
-            uint64_to_hex_string((uint64_t) (ptr + kernel.hhdm), buf);
+            uint8_t* ptr = (uint8_t*) kmalloc(8192);
+            if (!ptr) {
+                printk("ERROR: kmalloc failed for kmalloc command\n");
+                return false;
+            }
+            char buf[17];
+            uint64_to_hex_string((uint64_t)(ptr + kernel.hhdm), buf);
             printk("\n8192 byte block dynamically allocated by the kernel: address 0x%s\n", buf);
         } else if (strcmp(input,"help")) {
                 printk("\nCommands available:\n");

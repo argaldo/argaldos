@@ -46,32 +46,41 @@ uint32_t get_first_sector_of_cluster(int cluster) {
 }
 
 DIR_ENTRY_LIST parse_directory_sector(char* directory_sector) {
-        char* dir_entries[16];
-        DIR_ENTRY_LIST entry_list;
-        entry_list.size = 0;
-        int entries = 0;
-        for(int i=0;i<16;i++) { dir_entries[i] = &directory_sector[i*32]; }
-        for(int i=0;i<16;i++) {
-               if (dir_entries[i][0] != DIR_ENTRY_UNUSED) {
-                  if (dir_entries[i][DIR_ENTRY_DIR_ATTR_OFFSET] != DIR_ENTRY_ATTR_LONG_FILE_NAME) {
-                          DIR_ENTRY dir_entry;
-                          for(int j=DIR_ENTRY_DIR_NAME_OFFSET;j<DIR_ENTRY_DIR_EXT_OFFSET;j++) { dir_entry.dir_name[j] = dir_entries[i][j]; } dir_entry.dir_name[8] = 0x00;
-                          for(int j=DIR_ENTRY_DIR_EXT_OFFSET;j<DIR_ENTRY_DIR_ATTR_OFFSET;j++) { dir_entry.dir_extension[j-DIR_ENTRY_DIR_EXT_OFFSET] = dir_entries[i][j]; } dir_entry.dir_extension[3] = 0x00;
-                          dir_entry.dir_first_cluster_high = ((uint16_t)dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_HIGH_OFFSET+1]<<8 | dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_HIGH_OFFSET]);
-                          dir_entry.dir_first_cluster_low = ((uint16_t)dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_LOW_OFFSET+1]<<8 | dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_LOW_OFFSET]);
-                          dir_entry.dir_file_size = combine32bit(dir_entries[i][DIR_ENTRY_DIR_FILE_SIZE_OFFSET+3],dir_entries[i][DIR_ENTRY_DIR_FILE_SIZE_OFFSET+2],dir_entries[i][DIR_ENTRY_DIR_FILE_SIZE_OFFSET+1],dir_entries[i][DIR_ENTRY_DIR_FILE_SIZE_OFFSET]);
-                          dir_entry.dir_first_cluster = combine32bit(dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_HIGH_OFFSET+1],dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_HIGH_OFFSET],dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_LOW_OFFSET+1],dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_LOW_OFFSET]);
-
-                          //kdebug("dir name: %s.%s\n", dir_entry.dir_name, dir_entry.dir_extension);
-                          entry_list.list[i] = dir_entry;
-                          entry_list.size = ++entries;
-                  } else {
-                          // no long file name support, yet
-                          continue;
-                  }
-               }
-        }
+    DIR_ENTRY_LIST entry_list;
+    entry_list.size = 0;
+    if (!directory_sector) {
+        kdebug("parse_directory_sector: NULL directory_sector\n");
         return entry_list;
+    }
+    char* dir_entries[16];
+    int entries = 0;
+    for (int i = 0; i < 16; i++) { dir_entries[i] = &directory_sector[i * 32]; }
+    for (int i = 0; i < 16; i++) {
+        if (dir_entries[i][0] != DIR_ENTRY_UNUSED) {
+            if (dir_entries[i][DIR_ENTRY_DIR_ATTR_OFFSET] != DIR_ENTRY_ATTR_LONG_FILE_NAME) {
+                DIR_ENTRY dir_entry;
+                // Use safe copy for name and extension
+                strncpy_safe(dir_entry.dir_name, &dir_entries[i][DIR_ENTRY_DIR_NAME_OFFSET], 9);
+                dir_entry.dir_name[8] = 0x00;
+                strncpy_safe(dir_entry.dir_extension, &dir_entries[i][DIR_ENTRY_DIR_EXT_OFFSET], 4);
+                dir_entry.dir_extension[3] = 0x00;
+                dir_entry.dir_first_cluster_high = ((uint16_t)dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_HIGH_OFFSET + 1] << 8 | dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_HIGH_OFFSET]);
+                dir_entry.dir_first_cluster_low = ((uint16_t)dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_LOW_OFFSET + 1] << 8 | dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_LOW_OFFSET]);
+                dir_entry.dir_file_size = combine32bit(dir_entries[i][DIR_ENTRY_DIR_FILE_SIZE_OFFSET + 3], dir_entries[i][DIR_ENTRY_DIR_FILE_SIZE_OFFSET + 2], dir_entries[i][DIR_ENTRY_DIR_FILE_SIZE_OFFSET + 1], dir_entries[i][DIR_ENTRY_DIR_FILE_SIZE_OFFSET]);
+                dir_entry.dir_first_cluster = combine32bit(dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_HIGH_OFFSET + 1], dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_HIGH_OFFSET], dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_LOW_OFFSET + 1], dir_entries[i][DIR_ENTRY_DIR_FIRST_CLUSTER_LOW_OFFSET]);
+                if (entries < (int)(sizeof(entry_list.list) / sizeof(entry_list.list[0]))) {
+                    entry_list.list[entries++] = dir_entry;
+                    entry_list.size = entries;
+                } else {
+                    kdebug("parse_directory_sector: entry_list overflow\n");
+                }
+            } else {
+                // no long file name support, yet
+                continue;
+            }
+        }
+    }
+    return entry_list;
 }
 
 uint8_t* read_file(char* filename, uint8_t* buffer, int size) {

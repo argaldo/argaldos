@@ -79,13 +79,32 @@ void removeLastChar(char *str) {
     }
 }
 
-void strcpy(char* dest, const char* src) {
-    while (*src != '\0') {
-        *dest = *src;
-        dest++;
-        src++;
+
+// Safe string copy: copies up to n-1 chars, always null-terminates
+void strncpy_safe(char* dest, const char* src, size_t n) {
+    if (!dest || !src || n == 0) return;
+    size_t i = 0;
+    for (; i < n - 1 && src[i] != '\0'; ++i) {
+        dest[i] = src[i];
     }
-    *dest = '\0'; // Null-terminate the destination string
+    dest[i] = '\0';
+}
+
+// Safe string concatenation: appends up to n-1 total chars, always null-terminates
+void strncat_safe(char* dest, const char* src, size_t n) {
+    if (!dest || !src || n == 0) return;
+    size_t dest_len = strlen(dest);
+    size_t i = 0;
+    for (; dest_len + i < n - 1 && src[i] != '\0'; ++i) {
+        dest[dest_len + i] = src[i];
+    }
+    dest[dest_len + i] = '\0';
+}
+
+// Deprecated: unsafe, use strncpy_safe instead
+void strcpy(char* dest, const char* src) {
+    // Use strncpy_safe with a large enough buffer for legacy code
+    strncpy_safe(dest, src, 4096); // 4096 is arbitrary, should match real buffer size
 }
 
 /**
@@ -156,14 +175,11 @@ bool strcmp(const char* str1, const char* str2) {
 
 
 
+
+// Deprecated: unsafe, use strncat_safe instead
 char * strcat(char *dest, const char *src) {
-   int i,j;
-   for (i=0; dest[i] != '\0';i++)
-      ;
-   for (j = 0; src[j] != '\0'; j++)
-      dest[i+j] = src[j];
-   dest[i+j] = '\0';
-   return dest;
+    strncat_safe(dest, src, 4096); // 4096 is arbitrary, should match real buffer size
+    return dest;
 }
 
 

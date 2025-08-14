@@ -54,7 +54,12 @@ unsigned char convertScancode(unsigned char scancode) {
     }
     if (scancode == 0x3A) {
         capslock = !capslock;
+// Initialize inputLength to zero
+unsigned int inputLength = 0;
+
         return '\0';
+   // Validate scancode range
+   if (scancode > 127) return 0;
     }
     if (scancode == 0x2A || scancode == 0x36) {
         shifted = true;
