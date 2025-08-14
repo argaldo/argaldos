@@ -182,6 +182,13 @@ int read_elf(const uint8_t* elf, bool run) {
                 }
                 printk("Copying the code to kernel memory\n");
                 memcpy(ptr + kernel.hhdm, code, section_header.size);
+                // Only execute if section is position-independent or virtual address is zero
+                if (section_header.virtual_address != 0) {
+                    kdebug("Refusing to execute code: section virtual address is not zero (0x%zx). Only position-independent code is supported.\n", (size_t)section_header.virtual_address);
+                    kfree(code);
+                    kfree(ptr);
+                    return -1;
+                }
                 // Calculate offset of entry point within section's virtual address
                 uint64_t entry_offset = elf_header.entry_point_address - section_header.virtual_address;
                 int (*elf_entry_point)(void) = (int(*)(void))(ptr + kernel.hhdm + entry_offset);
