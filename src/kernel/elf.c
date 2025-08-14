@@ -131,6 +131,7 @@ int parse_section_header(uint8_t* elf, struct ELF_SECTION_HEADER_T* section_head
 
 
 
+
 int read_elf(const uint8_t* elf, bool run) {
     struct ELF_FILE_HEADER_T elf_header;
     if (!parse_elf_header(elf, &elf_header)) {
@@ -138,70 +139,55 @@ int read_elf(const uint8_t* elf, bool run) {
         return -1;
     }
     print_elf_header(elf_header);
-    int found_entry = 0;
+
+    // Find min/max virtual address for SHT_PROGBITS
+    uint64_t min_addr = (uint64_t)-1, max_addr = 0;
     for (int i = 0; i < elf_header.section_header_entry_count; i++) {
-        struct ELF_SECTION_HEADER_T section_header;
-        if (parse_section_header((uint8_t*)elf, &section_header, elf_header.section_header_offset, i, elf_header.section_header_entry_size) != 0) {
-            kdebug("Failed to parse section header %d\n", i);
-            continue;
+        struct ELF_SECTION_HEADER_T sh;
+        if (parse_section_header((uint8_t*)elf, &sh, elf_header.section_header_offset, i, elf_header.section_header_entry_size) != 0) continue;
+        if (sh.type == 0x01 && sh.size > 0) {
+            if (sh.virtual_address < min_addr) min_addr = sh.virtual_address;
+            if (sh.virtual_address + sh.size > max_addr) max_addr = sh.virtual_address + sh.size;
         }
-        print_section_header(section_header);
-        if (section_header.type == 0x01) { // SHT_PROGBITS
-            // Check section bounds
-            if (section_header.offset + section_header.size > 4608) {
+    }
+    if (min_addr == (uint64_t)-1 || max_addr <= min_addr) {
+        kdebug("No valid SHT_PROGBITS sections found.\n");
+        return -1;
+    }
+    uint64_t image_size = max_addr - min_addr;
+    uint8_t* image = (uint8_t*)kmalloc(image_size);
+    if (!image) {
+        kdebug("Failed to allocate memory for ELF image.\n");
+        return -1;
+    }
+    memset(image, 0, image_size);
+    // Copy all SHT_PROGBITS sections to their virtual address offset in image
+    for (int i = 0; i < elf_header.section_header_entry_count; i++) {
+        struct ELF_SECTION_HEADER_T sh;
+        if (parse_section_header((uint8_t*)elf, &sh, elf_header.section_header_offset, i, elf_header.section_header_entry_size) != 0) continue;
+        if (sh.type == 0x01 && sh.size > 0) {
+            if (sh.offset + sh.size > 4608) {
                 kdebug("Section offset+size out of buffer bounds, skipping\n");
                 continue;
             }
-            // Check if entry point is within this section's virtual address range
-            uint64_t section_vstart = section_header.virtual_address;
-            uint64_t section_vend = section_header.virtual_address + section_header.size;
-            if (elf_header.entry_point_address < section_vstart || elf_header.entry_point_address >= section_vend) {
-                kdebug("Entry point not in this section's virtual address range, skipping\n");
-                continue;
+            uint64_t off = sh.virtual_address - min_addr;
+            for (size_t j = 0; j < sh.size; j++) {
+                image[off + j] = elf[sh.offset + j];
             }
-            kdebug("Found executable section containing entry point (virtual address match)\n");
-            if (section_header.size == 0) {
-                kdebug("Section size is zero, skipping\n");
-                continue;
-            }
-            uint8_t* code = (uint8_t*)kmalloc(section_header.size);
-            if (!code) {
-                kdebug("Failed to allocate memory for code section\n");
-                return -1;
-            }
-            for (size_t j = 0; j < section_header.size; j++) {
-                code[j] = elf[section_header.offset + j];
-            }
-            if (run) {
-                printk("Allocating memory to store the code\n");
-                uint8_t* ptr = (uint8_t*)kmalloc(section_header.size);
-                if (!ptr) {
-                    kdebug("Failed to allocate memory for code execution\n");
-                    kfree(code);
-                    return -1;
-                }
-                printk("Copying the code to kernel memory\n");
-                memcpy(ptr + kernel.hhdm, code, section_header.size);
-                // Only execute if section is position-independent or virtual address is zero
-                if (section_header.virtual_address != 0) {
-                    kdebug("Refusing to execute code: section virtual address is not zero (0x%zx). Only position-independent code is supported.\n", (size_t)section_header.virtual_address);
-                    kfree(code);
-                    kfree(ptr);
-                    return -1;
-                }
-                // Calculate offset of entry point within section's virtual address
-                uint64_t entry_offset = elf_header.entry_point_address - section_header.virtual_address;
-                int (*elf_entry_point)(void) = (int(*)(void))(ptr + kernel.hhdm + entry_offset);
-                printk("Running the code at entry offset 0x%zx\n", (size_t)entry_offset);
-                found_entry = 1;
-                elf_entry_point();
-            }
-            kfree(code);
         }
     }
-    if (!found_entry) {
-        kdebug("No valid executable section containing entry point was found.\n");
+    // Check entry point is within image
+    if (elf_header.entry_point_address < min_addr || elf_header.entry_point_address >= max_addr) {
+        kdebug("Entry point not within loaded image.\n");
+        kfree(image);
         return -1;
     }
+    if (run) {
+        uint64_t entry_offset = elf_header.entry_point_address - min_addr;
+        int (*elf_entry_point)(void) = (int(*)(void))(image + kernel.hhdm + entry_offset);
+        printk("Running ELF entry point at offset 0x%zx\n", (size_t)entry_offset);
+        elf_entry_point();
+    }
+    kfree(image);
     return 0;
 }
