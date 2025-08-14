@@ -4,6 +4,16 @@
 #include <kernel/pmm.h>
 #include <string.h>
 
+// Track page tables we create for later mapping
+#define MAX_EARLY_PAGE_TABLES 256
+static uint64_t early_page_tables[MAX_EARLY_PAGE_TABLES];
+static int num_early_page_tables = 0;
+
+// Function declarations
+static void add_early_page_table(uint64_t addr);
+static uint64_t* alloc_table(int do_map);
+static uint64_t* get_next_table(uint64_t* table, int index, int create);
+
 // Simple page table structures for x86_64
 static uint64_t* pml4 = 0;
 
@@ -82,11 +92,6 @@ void init_paging() {
 }
 
 // Helper to get/create next level table
-// Track page tables we create for later mapping
-#define MAX_EARLY_PAGE_TABLES 256
-static uint64_t early_page_tables[MAX_EARLY_PAGE_TABLES];
-static int num_early_page_tables = 0;
-
 static void add_early_page_table(uint64_t addr) {
     if (num_early_page_tables < MAX_EARLY_PAGE_TABLES) {
         early_page_tables[num_early_page_tables++] = addr;
