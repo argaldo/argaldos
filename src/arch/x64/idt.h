@@ -2,6 +2,8 @@
  * Copyright (C) 2024 Jake Steinburger under the MIT license. See the GitHub repository for more information.
  */
 
+
+#include <stddef.h>
 #include <kernel/kernel.h>
 
 #ifndef IDT_H
