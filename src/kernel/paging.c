@@ -10,7 +10,11 @@ static uint64_t* pml4 = 0;
 // Allocate a new page-aligned page table
 static uint64_t* alloc_table(int do_map) {
     uint64_t* table = (uint64_t*)kmalloc();
-    printk("[paging] alloc_table: kmalloc returned %p (identity-mapped test)\n", table);
+    printk("[paging] alloc_table: kmalloc returned %p (HHDM %p)\n", table, (void*)((uint64_t)table + kernel.hhdm));
+    printk("[paging] hhdm value: %p\n", (void*)kernel.hhdm);
+    volatile uint64_t *test = (uint64_t*)((uint64_t)table + kernel.hhdm);
+    *test = 0xdeadbeef;
+    printk("[paging] wrote to hhdm-mapped page table\n");
     if (do_map) {
         map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
         printk("[paging] alloc_table: mapped %p\n", table);
