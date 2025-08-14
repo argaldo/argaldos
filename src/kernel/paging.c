@@ -10,11 +10,12 @@ static uint64_t* pml4 = 0;
 // Allocate a new page-aligned page table
 static uint64_t* alloc_table(int do_map) {
     uint64_t* table = (uint64_t*)kmalloc();
-    printk("[paging] alloc_table: kmalloc returned %p\n", table);
+    printk("[paging] alloc_table: kmalloc returned %p (HHDM %p)\n", table, (void*)((uint64_t)table + kernel.hhdm));
     if (do_map) {
         map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
         printk("[paging] alloc_table: mapped %p\n", table);
     }
+    printk("[paging] alloc_table: memset HHDM %p\n", (void*)((uint64_t)table + kernel.hhdm));
     memset((void*)((uint64_t)table + kernel.hhdm), 0, PAGE_SIZE);
     return table;
 }
@@ -43,6 +44,7 @@ void init_paging() {
 // Helper to get/create next level table
 static uint64_t* get_next_table(uint64_t* table, int index, int create) {
     uint64_t* hhdm_table = (uint64_t*)((uint64_t)table + kernel.hhdm);
+    printk("[paging] get_next_table: table=%p hhdm_table=%p index=%d\n", table, hhdm_table, index);
     if (!(hhdm_table[index] & PAGE_PRESENT)) {
         if (!create) return 0;
         uint64_t* next = alloc_table(1); // Map lower-level tables
