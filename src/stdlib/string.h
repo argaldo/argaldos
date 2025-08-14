@@ -1,4 +1,6 @@
+
 #include <stdint.h>
+#include <stddef.h>
 
 #ifndef STRINGS_H
 #define STRINGS_H
