@@ -1,5 +1,6 @@
 #include "paging.h"
 #include <kernel/printk.h>
+#include <kernel/kernel.h>
 #include <kernel/pmm.h>
 #include <string.h>
 
