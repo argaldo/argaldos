@@ -1,5 +1,7 @@
 // Ensure stdint.h is included for uint64_t, etc.
+// Ensure stdint.h and kernel.h are included for uint64_t and kernel struct
 #include <stdint.h>
+#include <kernel/kernel.h>
 // Map memory at a specific address (if not already used). Returns pointer or NULL.
 void* map_at_addr(uint64_t addr, uint64_t size) {
     // For a simple flat model, just check if the address is in usable RAM and return it.
