@@ -22,12 +22,15 @@ static uint64_t* alloc_table(int do_map) {
     printk("[paging] HHDM pointer created: %p\n", test);
     *test = 0xdeadbeef;
     printk("[paging] wrote 0xdeadbeef to hhdm-mapped page table\n");
-    if (do_map) {
+    // Zero the table through HHDM - we know HHDM works from the test above
+    printk("[paging] alloc_table: zeroing table through HHDM at %p\n", test);
+    memset((void*)test, 0, PAGE_SIZE);
+
+    if (do_map && pml4 != 0) {
+        // Only try to map if we're not setting up the initial PML4
         map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
         printk("[paging] alloc_table: mapped %p\n", table);
     }
-    printk("[paging] alloc_table: memset phys %p\n", table);
-    memset((void*)table, 0, PAGE_SIZE);
     return table;
 }
 
