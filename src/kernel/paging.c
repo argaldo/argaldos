@@ -41,12 +41,13 @@ void init_paging() {
 
 // Helper to get/create next level table
 static uint64_t* get_next_table(uint64_t* table, int index, int create) {
-    if (!(table[index] & PAGE_PRESENT)) {
+    uint64_t* hhdm_table = (uint64_t*)((uint64_t)table + kernel.hhdm);
+    if (!(hhdm_table[index] & PAGE_PRESENT)) {
         if (!create) return 0;
         uint64_t* next = alloc_table(1); // Map lower-level tables
-        table[index] = ((uint64_t)next) | PAGE_PRESENT | PAGE_RW | PAGE_USER;
+        hhdm_table[index] = ((uint64_t)next) | PAGE_PRESENT | PAGE_RW | PAGE_USER;
     }
-    return (uint64_t*)(table[index] & ~0xFFFULL);
+    return (uint64_t*)(hhdm_table[index] & ~0xFFFULL);
 }
 
 void map_page(uint64_t virt_addr, uint64_t phys_addr, uint64_t flags) {
@@ -57,7 +58,8 @@ void map_page(uint64_t virt_addr, uint64_t phys_addr, uint64_t flags) {
     uint64_t* pdpt = get_next_table(pml4, pml4_idx, 1);
     uint64_t* pd   = get_next_table(pdpt, pdpt_idx, 1);
     uint64_t* pt   = get_next_table(pd, pd_idx, 1);
-    pt[pt_idx] = (phys_addr & ~0xFFFULL) | (flags & 0xFFF) | PAGE_PRESENT;
+    uint64_t* hhdm_pt = (uint64_t*)((uint64_t)pt + kernel.hhdm);
+    hhdm_pt[pt_idx] = (phys_addr & ~0xFFFULL) | (flags & 0xFFF) | PAGE_PRESENT;
 }
 
 void unmap_page(uint64_t virt_addr) {
@@ -71,5 +73,6 @@ void unmap_page(uint64_t virt_addr) {
     if (!pd) return;
     uint64_t* pt   = get_next_table(pd, pd_idx, 0);
     if (!pt) return;
-    pt[pt_idx] = 0;
+    uint64_t* hhdm_pt = (uint64_t*)((uint64_t)pt + kernel.hhdm);
+    hhdm_pt[pt_idx] = 0;
 }
