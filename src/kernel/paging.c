@@ -24,7 +24,7 @@ void init_paging() {
     pml4 = alloc_table(0); // Do not map PML4 itself
     printk("[paging] init_paging: pml4 at %p\n", pml4);
     // Identity map first 16MB for kernel and user (for demo)
-    for (uint64_t addr = 0; addr < 0x1000000; addr += PAGE_SIZE) {
+    for (uint64_t addr = PAGE_SIZE; addr < 0x1000000; addr += PAGE_SIZE) {
         printk("[paging] identity map: virt=%p phys=%p\n", (void*)addr, (void*)addr);
         map_page(addr, addr, PAGE_PRESENT | PAGE_RW | PAGE_USER);
     }
@@ -46,6 +46,7 @@ static uint64_t* get_next_table(uint64_t* table, int index, int create) {
     if (!(hhdm_table[index] & PAGE_PRESENT)) {
         if (!create) return 0;
         uint64_t* next = alloc_table(1); // Map lower-level tables
+        printk("[paging] get_next_table: writing entry %d of table %p (HHDM %p) with %p\n", index, table, hhdm_table, next);
         hhdm_table[index] = ((uint64_t)next) | PAGE_PRESENT | PAGE_RW | PAGE_USER;
     }
     return (uint64_t*)(hhdm_table[index] & ~0xFFFULL);
