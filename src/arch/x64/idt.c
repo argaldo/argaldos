@@ -115,6 +115,7 @@ struct interrupt_frame {
     uint64_t ss;
 };
 
+
 // Example syscall handlers
 void sys_print() {
     printk("[SYSCALL] sys_print called!\n");
@@ -123,18 +124,25 @@ void sys_exit() {
     printk("[SYSCALL] sys_exit called!\n");
 }
 
+// POSIX-like open syscall: rdi = filename pointer
+void sys_open(const char* filename) {
+    printk("[SYSCALL] sys_open called for file: %s\n", filename);
+    // TODO: implement real file open logic, return fd
+}
+
+
 __attribute__((interrupt))
 void syscallISR(struct interrupt_frame* frame) {
-    uint64_t syscall_id;
-    // Read rax from stack (interrupt frame does not include rax, so use inline asm)
+    uint64_t syscall_id, filename_ptr;
     asm volatile ("mov %%rax, %0" : "=r"(syscall_id));
+    asm volatile ("mov %%rdi, %0" : "=r"(filename_ptr));
     printk("[argaldOS:kernel:IDT] IRQ 0x80 [syscall] received, id=%llu\n", (unsigned long long)syscall_id);
     switch (syscall_id) {
         case 1:
             sys_print();
             break;
         case 2:
-            sys_exit();
+            sys_open((const char*)filename_ptr);
             break;
         default:
             printk("[SYSCALL] Unknown syscall id: %llu\n", syscall_id);
