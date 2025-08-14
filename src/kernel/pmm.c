@@ -92,18 +92,6 @@ void initPMM() {
     printk("[argaldOS:kernel:PMM] Successfully initialized physical memory allocator.\n");
 }
 
-// just a basic utility
-static uint8_t setBit(uint8_t byte, uint8_t bitPosition, bool setTo) {
-    if (bitPosition < 8) {
-        if (setTo)
-            return byte |= (1 << bitPosition);
-        else 
-            return byte &= ~(1 << bitPosition);
-    } else {
-        return byte;
-    }
-}
-
 // Ooh, fancy! Dynamic memory management, kmalloc and kfree!
 // something I gotta remember sometimes is that, unlike userspace heap malloc,
 // this doesn't take a size. It will always allocate 1024 bytes
