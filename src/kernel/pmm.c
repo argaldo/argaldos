@@ -110,7 +110,7 @@ void* kmalloc() {
                 // set it to be used
                 *bitmap_ptr = setBit(*bitmap_ptr, y, 1);
                 // the actual frame index is just `byte + bit`
-                void* addr = (void*)((kernel.largestSect.maxBegin + (((b * 8) + y) * 4096)) + kernel.largestSect.bitmapReserved);
+                void* addr = (void*)(kernel.largestSect.maxBegin + (((b * 8) + y) * 4096));
                 printk("[PMM] kmalloc: allocated addr=%p (b=%d y=%d)\n", addr, b, y);
                 // Ensure page alignment
                 if (((uint64_t)addr & 0xFFF) != 0) {
