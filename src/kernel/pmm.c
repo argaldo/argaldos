@@ -11,6 +11,18 @@
 #include <stdlib/binop.h>
 #include <stdlib/string.h>
 
+// just a basic utility
+static uint8_t setBit(uint8_t byte, uint8_t bitPosition, bool setTo) {
+    if (bitPosition < 8) {
+        if (setTo)
+            return byte |= (1 << bitPosition);
+        else 
+            return byte &= ~(1 << bitPosition);
+    } else {
+        return byte;
+    }
+}
+
 // Map memory at a specific address (if not already used). Returns pointer or NULL.
 void* map_at_addr(uint64_t addr, uint64_t size) {
     // For a simple flat model, just check if the address is in usable RAM and return it.
