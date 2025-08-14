@@ -24,6 +24,7 @@ int copy_from_user(char *dest, const char *user_src, size_t maxlen) {
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "idt.h"
 #include <kernel/printk.h>
 #include <drivers/ports.h>
