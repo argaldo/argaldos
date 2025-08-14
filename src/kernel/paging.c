@@ -9,24 +9,30 @@ static uint64_t* pml4 = 0;
 // Allocate a new page-aligned page table
 static uint64_t* alloc_table() {
     uint64_t* table = (uint64_t*)kmalloc();
+    printk("[paging] alloc_table: kmalloc returned %p\n", table);
     // Identity map the physical address of the table so it's accessible after paging is enabled
-    // This assumes kmalloc returns a physical address in the identity-mapped region
     map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
+    printk("[paging] alloc_table: mapped %p\n", table);
     memset(table, 0, PAGE_SIZE);
     return table;
 }
 
 void init_paging() {
+    printk("[paging] init_paging: start\n");
     pml4 = alloc_table();
+    printk("[paging] init_paging: pml4 at %p\n", pml4);
     // Identity map first 16MB for kernel and user (for demo)
     for (uint64_t addr = 0; addr < 0x1000000; addr += PAGE_SIZE) {
         map_page(addr, addr, PAGE_PRESENT | PAGE_RW | PAGE_USER);
     }
+    printk("[paging] init_paging: identity-mapped 16MB\n");
     // Map kernel higher half (example: 0xFFFF800000000000)
     for (uint64_t addr = 0; addr < 0x1000000; addr += PAGE_SIZE) {
         map_page(0xFFFF800000000000ULL + addr, addr, PAGE_PRESENT | PAGE_RW);
     }
+    printk("[paging] init_paging: higher-half mapped\n");
     // Load PML4 into CR3
+    printk("[paging] init_paging: loading CR3 with %p\n", pml4);
     asm volatile ("mov %0, %%cr3" : : "r"(pml4));
     printk("[paging] Paging enabled.\n");
 }
