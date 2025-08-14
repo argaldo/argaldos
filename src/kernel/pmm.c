@@ -97,6 +97,7 @@ static uint8_t setBit(uint8_t byte, uint8_t bitPosition, bool setTo) {
 // Ooh, fancy! Dynamic memory management, kmalloc and kfree!
 // something I gotta remember sometimes is that, unlike userspace heap malloc,
 // this doesn't take a size. It will always allocate 1024 bytes
+#include <stdint.h>
 void* kmalloc() {
     // go to the start of the largest part of memory, and look thru it.
     for (int b = 0; b < kernel.largestSect.bitmapReserved; b++) {
