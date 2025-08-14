@@ -112,7 +112,13 @@ void* kmalloc() {
                 // set it to be used
                 *((uint8_t*)(kernel.largestSect.maxBegin + b + kernel.hhdm)) = setBit(*((uint8_t*)(kernel.largestSect.maxBegin + b + kernel.hhdm)), y, 1);
                 // the actual frame index is just `byte + bit`
-                return (void*)((kernel.largestSect.maxBegin + (((b * 8) + y) * 4096)) + kernel.largestSect.bitmapReserved);
+                void* addr = (void*)((kernel.largestSect.maxBegin + (((b * 8) + y) * 4096)) + kernel.largestSect.bitmapReserved);
+                // Ensure page alignment
+                if (((uint64_t)addr & 0xFFF) != 0) {
+                    printk("[PMM] kmalloc returned non-page-aligned address!\n");
+                    addr = (void*)(((uint64_t)addr + 0xFFF) & ~0xFFFULL);
+                }
+                return addr;
             }
         }
     }

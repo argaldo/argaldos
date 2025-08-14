@@ -139,7 +139,7 @@ void kernel_start(void) {
     print_banner();
     printk("[argaldOS:kernel:COR] argaldOS kernel is bootstrapping\n");
     initPMM();
-    init_paging(); // Enable paging before GDT/IDT/other subsystems
+    init_paging(); // Enable paging after PMM is ready
     initGDT();
     initIDT();
     setup_timer();
