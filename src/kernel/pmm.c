@@ -14,8 +14,8 @@
 #include <stdlib/binop.h>
 #include <stdlib/string.h>
 #include <stdint.h>
-#include <string.h>
 #include <kernel/kernel.h>
+#include <kernel/mem.h>
 
 // Map memory at a specific address (if not already used). Returns pointer or NULL.
 void* map_at_addr(uint64_t addr, uint64_t size) {
