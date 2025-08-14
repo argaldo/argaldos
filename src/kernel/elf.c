@@ -119,13 +119,14 @@ void print_section_header(struct ELF_SECTION_HEADER_T section_header) {
 }
 
 int parse_section_header(uint8_t* elf, struct ELF_SECTION_HEADER_T* section_header, uint64_t offset, int index, uint16_t header_size) {
-        uint64_t base_offset = offset + (index * header_size);
-        section_header->name_offset = combine32bit(elf[base_offset+0x03],elf[base_offset+0x02],elf[base_offset+0x01],elf[base_offset + 0x00]);
-        section_header->type = combine32bit(elf[base_offset+0x07],elf[base_offset+0x06],elf[base_offset+0x05],elf[base_offset + 0x04]);
-        // TODO rest of sectino header fields
-        section_header->offset = combine64bit(elf[base_offset+0x1F],elf[base_offset+0x1E],elf[base_offset+0x1D],elf[base_offset+0x1C],elf[base_offset+0x1B],elf[base_offset+0x1A],elf[base_offset+0x19],elf[base_offset+0x18]);
-        section_header->size = combine64bit(elf[base_offset+0x27],elf[base_offset+0x26],elf[base_offset+0x25],elf[base_offset+0x24],elf[base_offset+0x23],elf[base_offset+0x22],elf[base_offset+0x21],elf[base_offset+0x20]);
-        return 0;
+    uint64_t base_offset = offset + (index * header_size);
+    section_header->name_offset = combine32bit(elf[base_offset+0x03],elf[base_offset+0x02],elf[base_offset+0x01],elf[base_offset + 0x00]);
+    section_header->type = combine32bit(elf[base_offset+0x07],elf[base_offset+0x06],elf[base_offset+0x05],elf[base_offset + 0x04]);
+    // Parse virtual address (sh_addr)
+    section_header->virtual_address = combine64bit(elf[base_offset+0x17],elf[base_offset+0x16],elf[base_offset+0x15],elf[base_offset+0x14],elf[base_offset+0x13],elf[base_offset+0x12],elf[base_offset+0x11],elf[base_offset+0x10]);
+    section_header->offset = combine64bit(elf[base_offset+0x1F],elf[base_offset+0x1E],elf[base_offset+0x1D],elf[base_offset+0x1C],elf[base_offset+0x1B],elf[base_offset+0x1A],elf[base_offset+0x19],elf[base_offset+0x18]);
+    section_header->size = combine64bit(elf[base_offset+0x27],elf[base_offset+0x26],elf[base_offset+0x25],elf[base_offset+0x24],elf[base_offset+0x23],elf[base_offset+0x22],elf[base_offset+0x21],elf[base_offset+0x20]);
+    return 0;
 }
 
 
@@ -151,14 +152,14 @@ int read_elf(const uint8_t* elf, bool run) {
                 kdebug("Section offset+size out of buffer bounds, skipping\n");
                 continue;
             }
-            // Check if entry point is within this section
-            uint64_t section_start = section_header.offset;
-            uint64_t section_end = section_header.offset + section_header.size;
-            if (elf_header.entry_point_address < section_start || elf_header.entry_point_address >= section_end) {
-                kdebug("Entry point not in this section, skipping\n");
+            // Check if entry point is within this section's virtual address range
+            uint64_t section_vstart = section_header.virtual_address;
+            uint64_t section_vend = section_header.virtual_address + section_header.size;
+            if (elf_header.entry_point_address < section_vstart || elf_header.entry_point_address >= section_vend) {
+                kdebug("Entry point not in this section's virtual address range, skipping\n");
                 continue;
             }
-            kdebug("Found executable section containing entry point\n");
+            kdebug("Found executable section containing entry point (virtual address match)\n");
             if (section_header.size == 0) {
                 kdebug("Section size is zero, skipping\n");
                 continue;
@@ -181,8 +182,8 @@ int read_elf(const uint8_t* elf, bool run) {
                 }
                 printk("Copying the code to kernel memory\n");
                 memcpy(ptr + kernel.hhdm, code, section_header.size);
-                // Calculate offset of entry point within section
-                uint64_t entry_offset = elf_header.entry_point_address - section_header.offset;
+                // Calculate offset of entry point within section's virtual address
+                uint64_t entry_offset = elf_header.entry_point_address - section_header.virtual_address;
                 int (*elf_entry_point)(void) = (int(*)(void))(ptr + kernel.hhdm + entry_offset);
                 printk("Running the code at entry offset 0x%zx\n", (size_t)entry_offset);
                 found_entry = 1;
