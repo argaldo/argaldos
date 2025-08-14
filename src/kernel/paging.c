@@ -9,6 +9,9 @@ static uint64_t* pml4 = 0;
 // Allocate a new page-aligned page table
 static uint64_t* alloc_table() {
     uint64_t* table = (uint64_t*)kmalloc();
+    // Identity map the physical address of the table so it's accessible after paging is enabled
+    // This assumes kmalloc returns a physical address in the identity-mapped region
+    map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
     memset(table, 0, PAGE_SIZE);
     return table;
 }
