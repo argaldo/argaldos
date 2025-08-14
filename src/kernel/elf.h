@@ -43,6 +43,6 @@ struct ELF_SECTION_HEADER_T {
 
 
 //bool is_valid_elf(struct ELF_FILE_HEADER_T header);
-int read_elf(uint8_t* elf, bool run);
+int read_elf(const uint8_t* elf, bool run);
 
 #endif
