@@ -14,7 +14,7 @@ static uint64_t* alloc_table(int do_map) {
         map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
         printk("[paging] alloc_table: mapped %p\n", table);
     }
-    memset(table, 0, PAGE_SIZE);
+    memset((void*)((uint64_t)table + kernel.hhdm), 0, PAGE_SIZE);
     return table;
 }
 
