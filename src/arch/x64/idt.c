@@ -1,3 +1,23 @@
+// User/kernel separation: safely copy string from user space
+#define USER_SPACE_TOP 0x00007FFFFFFFFFFFULL
+#define MAX_USER_STRING 256
+
+// Returns 0 on success, -1 on error
+int copy_from_user(char *dest, const char *user_src, size_t maxlen) {
+    // Check user_src is in user space
+    uintptr_t addr = (uintptr_t)user_src;
+    if (addr == 0 || addr > USER_SPACE_TOP) return -1;
+    size_t i = 0;
+    for (; i < maxlen - 1; ++i) {
+        // Volatile to avoid compiler optimizing out
+        volatile char c = user_src[i];
+        if (addr + i > USER_SPACE_TOP) return -1;
+        dest[i] = c;
+        if (c == '\0') break;
+    }
+    dest[i < maxlen ? i : maxlen - 1] = '\0';
+    return 0;
+}
 /* 64 bit IDT implementation for the SpecOS kernel project.
  * Copyright (C) 2024 Jake Steinburger under the MIT license. See the GitHub repository for more information.
  */
@@ -125,9 +145,14 @@ void sys_exit() {
 }
 
 // POSIX-like open syscall: rdi = filename pointer
-void sys_open(const char* filename) {
-    printk("[SYSCALL] sys_open called for file: %s\n", filename);
-    // TODO: implement real file open logic, return fd
+void sys_open(const char* user_filename) {
+    char kfilename[MAX_USER_STRING];
+    if (copy_from_user(kfilename, user_filename, MAX_USER_STRING) == 0) {
+        printk("[SYSCALL] sys_open called for file: %s\n", kfilename);
+        // TODO: implement real file open logic, return fd
+    } else {
+        printk("[SYSCALL] sys_open: invalid user pointer!\n");
+    }
 }
 
 
