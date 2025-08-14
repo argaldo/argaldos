@@ -1,7 +1,3 @@
-// Ensure stdint.h is included for uint64_t, etc.
-// Ensure stdint.h and kernel.h are included for uint64_t and kernel struct
-
-
 /* Allocator for the SpecOS kernel project.
  * Copyright (C) 2024 Jake Steinburger under the MIT license. See the GitHub repository for more information.
  * This uses a simple bitmap allocator for 4096 byte size page frames, but I may switch to a buddy allocator in the future.
@@ -11,11 +7,9 @@
 #include <stdbool.h>
 #include <kernel/kernel.h>
 #include <kernel/printk.h>
+#include <kernel/mem.h>
 #include <stdlib/binop.h>
 #include <stdlib/string.h>
-#include <stdint.h>
-#include <kernel/kernel.h>
-#include <kernel/mem.h>
 
 // Map memory at a specific address (if not already used). Returns pointer or NULL.
 void* map_at_addr(uint64_t addr, uint64_t size) {
@@ -33,6 +27,18 @@ struct pmemBitmap {
 struct pmemData {
     uint8_t data[0];
 };
+
+// just a basic utility
+static uint8_t setBit(uint8_t byte, uint8_t bitPosition, bool setTo) {
+    if (bitPosition < 8) {
+        if (setTo)
+            return byte |= (1 << bitPosition);
+        else 
+            return byte &= ~(1 << bitPosition);
+    } else {
+        return byte;
+    }
+}
 
 void initPMM() {
     printk("[argaldOS:kernel:PMM] Starting Physical Memory Manager (PMM)...\n");
@@ -74,7 +80,7 @@ void initPMM() {
     volatile uint8_t* bitmap = (uint8_t*)(maxBegin + kernel.hhdm);
     memset((void*)bitmap, 0, bitmapReserved);
     // Mark bitmap region as used in the bitmap itself
-    uint64_t bitmap_pages = (bitmapReserved + 4095) / 4096;
+    // bitmap_pages was already calculated above
     for (uint64_t i = 0; i < bitmap_pages; i++) {
         uint64_t byte_index = i / 8;
         uint64_t bit_index = i % 8;
@@ -101,7 +107,6 @@ static uint8_t setBit(uint8_t byte, uint8_t bitPosition, bool setTo) {
 // Ooh, fancy! Dynamic memory management, kmalloc and kfree!
 // something I gotta remember sometimes is that, unlike userspace heap malloc,
 // this doesn't take a size. It will always allocate 1024 bytes
-#include <stdint.h>
 void* kmalloc() {
     printk("[PMM] kmalloc: maxBegin=%p maxLength=%x bitmapReserved=%x hhdm=%p\n", 
            (void*)kernel.largestSect.maxBegin, kernel.largestSect.maxLength, 
