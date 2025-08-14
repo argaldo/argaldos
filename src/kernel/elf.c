@@ -137,6 +137,7 @@ int read_elf(const uint8_t* elf, bool run) {
         return -1;
     }
     print_elf_header(elf_header);
+    int found_entry = 0;
     for (int i = 0; i < elf_header.section_header_entry_count; i++) {
         struct ELF_SECTION_HEADER_T section_header;
         if (parse_section_header((uint8_t*)elf, &section_header, elf_header.section_header_offset, i, elf_header.section_header_entry_size) != 0) {
@@ -145,7 +146,19 @@ int read_elf(const uint8_t* elf, bool run) {
         }
         print_section_header(section_header);
         if (section_header.type == 0x01) { // SHT_PROGBITS
-            kdebug("Found the code in the .text section of the ELF file\n");
+            // Check section bounds
+            if (section_header.offset + section_header.size > 4608) {
+                kdebug("Section offset+size out of buffer bounds, skipping\n");
+                continue;
+            }
+            // Check if entry point is within this section
+            uint64_t section_start = section_header.offset;
+            uint64_t section_end = section_header.offset + section_header.size;
+            if (elf_header.entry_point_address < section_start || elf_header.entry_point_address >= section_end) {
+                kdebug("Entry point not in this section, skipping\n");
+                continue;
+            }
+            kdebug("Found executable section containing entry point\n");
             if (section_header.size == 0) {
                 kdebug("Section size is zero, skipping\n");
                 continue;
@@ -168,12 +181,19 @@ int read_elf(const uint8_t* elf, bool run) {
                 }
                 printk("Copying the code to kernel memory\n");
                 memcpy(ptr + kernel.hhdm, code, section_header.size);
-                int (*elf_entry_point)(void) = (int(*)(void))(ptr + kernel.hhdm);
-                printk("Running the code\n");
+                // Calculate offset of entry point within section
+                uint64_t entry_offset = elf_header.entry_point_address - section_header.offset;
+                int (*elf_entry_point)(void) = (int(*)(void))(ptr + kernel.hhdm + entry_offset);
+                printk("Running the code at entry offset 0x%zx\n", (size_t)entry_offset);
+                found_entry = 1;
                 elf_entry_point();
             }
             kfree(code);
         }
+    }
+    if (!found_entry) {
+        kdebug("No valid executable section containing entry point was found.\n");
+        return -1;
     }
     return 0;
 }
