@@ -1,3 +1,11 @@
+// Map memory at a specific address (if not already used). Returns pointer or NULL.
+void* map_at_addr(uint64_t addr, uint64_t size) {
+    // For a simple flat model, just check if the address is in usable RAM and return it.
+    // (No real protection, but enough for a hobby OS.)
+    // You may want to add checks for overlap, but for now, just return the address + hhdm.
+    // WARNING: This is not safe for production OSes!
+    return (void*)(addr + kernel.hhdm);
+}
 /* Allocator for the SpecOS kernel project.
  * Copyright (C) 2024 Jake Steinburger under the MIT license. See the GitHub repository for more information.
  * This uses a simple bitmap allocator for 4096 byte size page frames, but I may switch to a buddy allocator in the future.

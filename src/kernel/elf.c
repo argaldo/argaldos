@@ -140,28 +140,7 @@ int read_elf(const uint8_t* elf, bool run) {
     }
     print_elf_header(elf_header);
 
-    // Find min/max virtual address for SHT_PROGBITS
-    uint64_t min_addr = (uint64_t)-1, max_addr = 0;
-    for (int i = 0; i < elf_header.section_header_entry_count; i++) {
-        struct ELF_SECTION_HEADER_T sh;
-        if (parse_section_header((uint8_t*)elf, &sh, elf_header.section_header_offset, i, elf_header.section_header_entry_size) != 0) continue;
-        if (sh.type == 0x01 && sh.size > 0) {
-            if (sh.virtual_address < min_addr) min_addr = sh.virtual_address;
-            if (sh.virtual_address + sh.size > max_addr) max_addr = sh.virtual_address + sh.size;
-        }
-    }
-    if (min_addr == (uint64_t)-1 || max_addr <= min_addr) {
-        kdebug("No valid SHT_PROGBITS sections found.\n");
-        return -1;
-    }
-    uint64_t image_size = max_addr - min_addr;
-    uint8_t* image = (uint8_t*)kmalloc(image_size);
-    if (!image) {
-        kdebug("Failed to allocate memory for ELF image.\n");
-        return -1;
-    }
-    memset(image, 0, image_size);
-    // Copy all SHT_PROGBITS sections to their virtual address offset in image
+    // Map all SHT_PROGBITS sections at their virtual addresses
     for (int i = 0; i < elf_header.section_header_entry_count; i++) {
         struct ELF_SECTION_HEADER_T sh;
         if (parse_section_header((uint8_t*)elf, &sh, elf_header.section_header_offset, i, elf_header.section_header_entry_size) != 0) continue;
@@ -170,24 +149,21 @@ int read_elf(const uint8_t* elf, bool run) {
                 kdebug("Section offset+size out of buffer bounds, skipping\n");
                 continue;
             }
-            uint64_t off = sh.virtual_address - min_addr;
+            uint8_t* dest = (uint8_t*)map_at_addr(sh.virtual_address, sh.size);
+            if (!dest) {
+                kdebug("Failed to map section at virtual address 0x%zx\n", (size_t)sh.virtual_address);
+                continue;
+            }
             for (size_t j = 0; j < sh.size; j++) {
-                image[off + j] = elf[sh.offset + j];
+                dest[j] = elf[sh.offset + j];
             }
         }
     }
-    // Check entry point is within image
-    if (elf_header.entry_point_address < min_addr || elf_header.entry_point_address >= max_addr) {
-        kdebug("Entry point not within loaded image.\n");
-        kfree(image);
-        return -1;
-    }
+    // Jump to entry point
     if (run) {
-        uint64_t entry_offset = elf_header.entry_point_address - min_addr;
-        int (*elf_entry_point)(void) = (int(*)(void))(image + kernel.hhdm + entry_offset);
-        printk("Running ELF entry point at offset 0x%zx\n", (size_t)entry_offset);
+        int (*elf_entry_point)(void) = (int(*)(void))(elf_header.entry_point_address + kernel.hhdm);
+        printk("Running ELF entry point at 0x%zx\n", (size_t)elf_header.entry_point_address);
         elf_entry_point();
     }
-    kfree(image);
     return 0;
 }

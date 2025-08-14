@@ -10,6 +10,7 @@
 void initPMM();
 
 void* kmalloc();
+void* map_at_addr(uint64_t addr, uint64_t size);
 
 void kfree(void* location);
 
