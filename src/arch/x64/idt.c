@@ -1,3 +1,20 @@
+/* 64 bit IDT implementation for the SpecOS kernel project.
+ * Copyright (C) 2024 Jake Steinburger under the MIT license. See the GitHub repository for more information.
+ */
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+#include "idt.h"
+#include <kernel/printk.h>
+#include <drivers/ports.h>
+#include <drivers/keyboard.h>
+#include <kernel/kernel.h>
+#include <kernel/pmm.h>
+#include <kernel/panic.h>
+
+// and the thingies to make it do stuff
+
 // User/kernel separation: safely copy string from user space
 #define USER_SPACE_TOP 0x00007FFFFFFFFFFFULL
 #define MAX_USER_STRING 256
@@ -18,22 +35,8 @@ int copy_from_user(char *dest, const char *user_src, size_t maxlen) {
     dest[i < maxlen ? i : maxlen - 1] = '\0';
     return 0;
 }
-/* 64 bit IDT implementation for the SpecOS kernel project.
- * Copyright (C) 2024 Jake Steinburger under the MIT license. See the GitHub repository for more information.
- */
 
-#include <stdbool.h>
-#include <stdint.h>
-#include <stddef.h>
-#include "idt.h"
-#include <kernel/printk.h>
-#include <drivers/ports.h>
-#include <drivers/keyboard.h>
-#include <kernel/kernel.h>
-#include <kernel/pmm.h>
-#include <kernel/panic.h>
 
-// and the thingies to make it do stuff
 
 void initIRQ();
 
