@@ -1,0 +1,6 @@
+# Ignore build and output directories
+obj/
+bin/
+
+# Ignore generated ISO image
+argaldos.iso
