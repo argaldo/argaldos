@@ -99,16 +99,19 @@ static uint8_t setBit(uint8_t byte, uint8_t bitPosition, bool setTo) {
 // this doesn't take a size. It will always allocate 1024 bytes
 #include <stdint.h>
 void* kmalloc() {
+    printk("[PMM] kmalloc: maxBegin=%p maxLength=%x bitmapReserved=%x hhdm=%p\n", (void*)kernel.largestSect.maxBegin, kernel.largestSect.maxLength, kernel.largestSect.bitmapReserved, (void*)kernel.hhdm);
     // go to the start of the largest part of memory, and look thru it.
     for (int b = 0; b < kernel.largestSect.bitmapReserved; b++) {
         // look through each bit checking if it's avaliable. If it is, return the matching memory address.
         for (int y = 0; y < 8; y++) {
-            if (!getBit(*((uint8_t*)(kernel.largestSect.maxBegin + b + kernel.hhdm)), y)) {
+            uint8_t* bitmap_ptr = (uint8_t*)(kernel.largestSect.maxBegin + b + kernel.hhdm);
+            if (!getBit(*bitmap_ptr, y)) {
                 // avaliable frame found!
                 // set it to be used
-                *((uint8_t*)(kernel.largestSect.maxBegin + b + kernel.hhdm)) = setBit(*((uint8_t*)(kernel.largestSect.maxBegin + b + kernel.hhdm)), y, 1);
+                *bitmap_ptr = setBit(*bitmap_ptr, y, 1);
                 // the actual frame index is just `byte + bit`
                 void* addr = (void*)((kernel.largestSect.maxBegin + (((b * 8) + y) * 4096)) + kernel.largestSect.bitmapReserved);
+                printk("[PMM] kmalloc: allocated addr=%p (b=%d y=%d)\n", addr, b, y);
                 // Ensure page alignment
                 if (((uint64_t)addr & 0xFFF) != 0) {
                     printk("[PMM] kmalloc returned non-page-aligned address!\n");
@@ -119,8 +122,8 @@ void* kmalloc() {
         }
     }
     // if it got to this point, no memory address is avaliable.
-    // print an error message and halt the computer
-    printk("KERNEL ERROR: Not enough physical memory space to allocate.\nHalting device.");
+    printk("[PMM] kmalloc: FAILED to allocate!\n");
+    printk("KERNEL ERROR: Not enough physical memory space to allocate.\nHalting device.\n");
     asm("cli; hlt");
     // and make the compiler happy by returning an arbitrary value
     return (void*) 0x00;
