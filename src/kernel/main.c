@@ -14,6 +14,8 @@
 #include <kernel/pmm.h>
 #include <kernel/timer.h>
 #include <kernel/mem.h>
+
+#include <kernel/paging.h>
 #include <fs/fat/fat32.h>
 
 
