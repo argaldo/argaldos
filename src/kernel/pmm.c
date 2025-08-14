@@ -28,18 +28,6 @@ struct pmemData {
     uint8_t data[0];
 };
 
-// just a basic utility
-static uint8_t setBit(uint8_t byte, uint8_t bitPosition, bool setTo) {
-    if (bitPosition < 8) {
-        if (setTo)
-            return byte |= (1 << bitPosition);
-        else 
-            return byte &= ~(1 << bitPosition);
-    } else {
-        return byte;
-    }
-}
-
 void initPMM() {
     printk("[argaldOS:kernel:PMM] Starting Physical Memory Manager (PMM)...\n");
     // get the memmap
