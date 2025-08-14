@@ -140,7 +140,9 @@ int read_elf(const uint8_t* elf, bool run) {
     }
     print_elf_header(elf_header);
 
-    // Map all SHT_PROGBITS sections at their virtual addresses
+    // Map all SHT_PROGBITS sections at their virtual addresses using paging
+    extern void map_page(uint64_t virt_addr, uint64_t phys_addr, uint64_t flags);
+    extern void* kmalloc();
     for (int i = 0; i < elf_header.section_header_entry_count; i++) {
         struct ELF_SECTION_HEADER_T sh;
         if (parse_section_header((uint8_t*)elf, &sh, elf_header.section_header_offset, i, elf_header.section_header_entry_size) != 0) continue;
@@ -149,13 +151,17 @@ int read_elf(const uint8_t* elf, bool run) {
                 kdebug("Section offset+size out of buffer bounds, skipping\n");
                 continue;
             }
-            uint8_t* dest = (uint8_t*)map_at_addr(sh.virtual_address, sh.size);
-            if (!dest) {
-                kdebug("Failed to map section at virtual address 0x%zx\n", (size_t)sh.virtual_address);
+            // Allocate physical memory for the section
+            uint8_t* phys = (uint8_t*)kmalloc();
+            if (!phys) {
+                kdebug("Failed to allocate physical memory for section\n");
                 continue;
             }
+            // Map the section at its virtual address
+            map_page(sh.virtual_address, (uint64_t)phys, 0x7); // present|rw|user
+            // Copy section data
             for (size_t j = 0; j < sh.size; j++) {
-                dest[j] = elf[sh.offset + j];
+                phys[j] = elf[sh.offset + j];
             }
         }
     }
