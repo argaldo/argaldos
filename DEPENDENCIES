@@ -1,0 +1,4 @@
+# paquetes Debian necesarios para la construccion del disco de arranque y/o ISO de arranque
+mtools
+gdisk
+xorriso
