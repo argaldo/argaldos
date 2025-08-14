@@ -105,11 +105,43 @@ void unmask() {
         port_byte_out(0x21,0xFC);
 }
 
+
+// Minimal interrupt frame for x86_64 (GCC/Clang ABI)
+struct interrupt_frame {
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t rflags;
+    uint64_t rsp;
+    uint64_t ss;
+};
+
+// Example syscall handlers
+void sys_print() {
+    printk("[SYSCALL] sys_print called!\n");
+}
+void sys_exit() {
+    printk("[SYSCALL] sys_exit called!\n");
+}
+
 __attribute__((interrupt))
-void syscallISR(void*) {
-   printk("[argaldOS:kernel:IDT] IRQ 0x80 [syscall] has been received\n");
-        port_byte_out(0x20, 0x20); // Acknowledge interrupt from master PIC
-        asm("sti");
+void syscallISR(struct interrupt_frame* frame) {
+    uint64_t syscall_id;
+    // Read rax from stack (interrupt frame does not include rax, so use inline asm)
+    asm volatile ("mov %%rax, %0" : "=r"(syscall_id));
+    printk("[argaldOS:kernel:IDT] IRQ 0x80 [syscall] received, id=%llu\n", syscall_id);
+    switch (syscall_id) {
+        case 1:
+            sys_print();
+            break;
+        case 2:
+            sys_exit();
+            break;
+        default:
+            printk("[SYSCALL] Unknown syscall id: %llu\n", syscall_id);
+            break;
+    }
+    port_byte_out(0x20, 0x20); // Acknowledge interrupt from master PIC
+    asm("sti");
 }
 
 __attribute__((interrupt))
