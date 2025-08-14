@@ -23,6 +23,8 @@ int k_n_r_strcmp(char s1[], char s2[]);
 bool strcmp(const char* str1, const char* str2);
 
 void strcpy(char* dest, const char* src);
+void strncpy_safe(char* dest, const char* src, size_t n);
+void strncat_safe(char* dest, const char* src, size_t n);
 void removeLastChar(char *str);
 void addCharToString(char *str, char c);
 
