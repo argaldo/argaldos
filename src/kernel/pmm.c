@@ -64,18 +64,10 @@ void initPMM() {
         n++;
     }
     kernel.largestSect.bitmapReserved = bitmapReserved;
-    // initialise that point in memory
-    // set the bitmap to a proper array, set all to 0
-    struct pmemBitmap memBuffBitmap;
-    for (int i = 0; i < bitmapReserved; i++)
-        memBuffBitmap.bitmap[i] = 0;
-    // set all of the data to 0
-    struct pmemData memBuffData;
-    for (int i = 0; i < maxBegin - bitmapReserved; i++)
-        memBuffData.data[i] = 0;
-    // put it at the right point in memory
-    *((struct pmemBitmap*) maxBegin + kernel.hhdm) = memBuffBitmap;
-    *((struct pmemData*) (maxBegin + bitmapReserved + kernel.hhdm)) = memBuffData;
+    // Zero the bitmap region in actual memory
+    memset((void*)(maxBegin + kernel.hhdm), 0, bitmapReserved);
+    // Zero the data region in actual memory
+    memset((void*)(maxBegin + bitmapReserved + kernel.hhdm), 0, maxLength - bitmapReserved);
     // display stuff for debugging
     char b1[9];
     char b2[9];
