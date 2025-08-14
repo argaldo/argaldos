@@ -7,6 +7,9 @@
 #ifndef IDT_H
 #define IDT_H
 
+// User/kernel separation helper
+int copy_from_user(char *dest, const char *user_src, size_t maxlen);
+
 struct IDTEntry {
     uint16_t offset1;
     uint16_t segmentSelector;
