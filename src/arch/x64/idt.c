@@ -128,7 +128,7 @@ void syscallISR(struct interrupt_frame* frame) {
     uint64_t syscall_id;
     // Read rax from stack (interrupt frame does not include rax, so use inline asm)
     asm volatile ("mov %%rax, %0" : "=r"(syscall_id));
-    printk("[argaldOS:kernel:IDT] IRQ 0x80 [syscall] received, id=%llu\n", syscall_id);
+    printk("[argaldOS:kernel:IDT] IRQ 0x80 [syscall] received, id=%llu\n", (unsigned long long)syscall_id);
     switch (syscall_id) {
         case 1:
             sys_print();
