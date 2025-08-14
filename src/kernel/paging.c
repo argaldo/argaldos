@@ -7,19 +7,20 @@
 static uint64_t* pml4 = 0;
 
 // Allocate a new page-aligned page table
-static uint64_t* alloc_table() {
+static uint64_t* alloc_table(int do_map) {
     uint64_t* table = (uint64_t*)kmalloc();
     printk("[paging] alloc_table: kmalloc returned %p\n", table);
-    // Identity map the physical address of the table so it's accessible after paging is enabled
-    map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
-    printk("[paging] alloc_table: mapped %p\n", table);
+    if (do_map) {
+        map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
+        printk("[paging] alloc_table: mapped %p\n", table);
+    }
     memset(table, 0, PAGE_SIZE);
     return table;
 }
 
 void init_paging() {
     printk("[paging] init_paging: start\n");
-    pml4 = alloc_table();
+    pml4 = alloc_table(0); // Do not map PML4 itself
     printk("[paging] init_paging: pml4 at %p\n", pml4);
     // Identity map first 16MB for kernel and user (for demo)
     for (uint64_t addr = 0; addr < 0x1000000; addr += PAGE_SIZE) {
@@ -41,7 +42,7 @@ void init_paging() {
 static uint64_t* get_next_table(uint64_t* table, int index, int create) {
     if (!(table[index] & PAGE_PRESENT)) {
         if (!create) return 0;
-        uint64_t* next = alloc_table();
+        uint64_t* next = alloc_table(1); // Map lower-level tables
         table[index] = ((uint64_t)next) | PAGE_PRESENT | PAGE_RW | PAGE_USER;
     }
     return (uint64_t*)(table[index] & ~0xFFFULL);
