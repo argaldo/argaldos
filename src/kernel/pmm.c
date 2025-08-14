@@ -36,50 +36,54 @@ struct pmemData {
 
 void initPMM() {
     printk("[argaldOS:kernel:PMM] Starting Physical Memory Manager (PMM)...\n");
-    // get the memmap;
+    // get the memmap
     uint64_t memmapEntriesCount = kernel.memmapEntryCount;
     struct limine_memmap_entry **memmapEntries = kernel.memmapEntries;
-    int maxBegin = 0;
-    int maxLength = 0;
-    // Find the largest avaliable entry to use for allocation
+    uint64_t maxBegin = 0;
+    uint64_t maxLength = 0;
+    
+    // Find the largest available entry to use for allocation
     for (uint64_t i = 0; i < memmapEntriesCount; i++) {
+        printk("[PMM] Memory region %d: base=%p len=%p type=%d\n", 
+               i, (void*)memmapEntries[i]->base, 
+               (void*)memmapEntries[i]->length, 
+               memmapEntries[i]->type);
         if (memmapEntries[i]->type == LIMINE_MEMMAP_USABLE &&
-            memmapEntries[i]->length > maxLength) {
-            // set it as this one
+            memmapEntries[i]->length > maxLength &&
+            memmapEntries[i]->base >= 0x100000) { // Start after 1MB
             maxBegin = memmapEntries[i]->base;
             maxLength = memmapEntries[i]->length;
         }   
     }
+    printk("[PMM] Selected memory region: base=%p len=%p\n", (void*)maxBegin, (void*)maxLength);
     kernel.largestSect.maxBegin = maxBegin;
     kernel.largestSect.maxLength = maxLength;
-    // WARNING: Heavily commented section, because I was trying to get my brain to understand it
-    // now that it's gotten the largest avaliable/reclaimable segment, allocate the first bit of space for the bitmap
-    // and the rest for the actual data.
-    // first of all, find the amount needed to allocate for the bitmap
-    int bitmapReserved;
-    int n = 1;
-    while (1) { // keeps adding another page frame for the bitmap until it's enough
-        if (n * 4096 * 8 > // bitmap size (in bits)
-            (maxLength / 4096) - n) { // number of page frame to allocate
-            // it's enough space: set this to be the correct number of page frames to reserve for the bitmap (in bytes)
-            bitmapReserved = n * 4096;
-            break;
-        }
-        n++;
-    }
+
+    // Calculate bitmap size needed
+    uint64_t total_pages = maxLength / 4096;
+    uint64_t bitmap_bytes = (total_pages + 7) / 8; // Round up to nearest byte
+    uint64_t bitmap_pages = (bitmap_bytes + 4095) / 4096; // Round up to nearest page
+    uint64_t bitmapReserved = bitmap_pages * 4096;
+    
+    printk("[PMM] Bitmap info: total_pages=%d bitmap_bytes=%d bitmap_pages=%d reserved=%d\n",
+           total_pages, bitmap_bytes, bitmap_pages, bitmapReserved);
+    
     kernel.largestSect.bitmapReserved = bitmapReserved;
-    // Zero the bitmap region in actual memory
-    memset((void*)(maxBegin + kernel.hhdm), 0, bitmapReserved);
-    // Zero the data region in actual memory
-    memset((void*)(maxBegin + bitmapReserved + kernel.hhdm), 0, maxLength - bitmapReserved);
-    // display stuff for debugging
-    char b1[9];
-    char b2[9];
-    char b3[9];
-    uint64_to_hex_string(maxBegin, b1);
-    uint64_to_hex_string(maxLength, b2);
-    uint64_to_hex_string(bitmapReserved, b3);
-    printk("[argaldOS:kernel:PMM] Successfully initialised physical memory allocator.\n");
+    
+    // Zero the entire bitmap region
+    volatile uint8_t* bitmap = (uint8_t*)(maxBegin + kernel.hhdm);
+    memset((void*)bitmap, 0, bitmapReserved);
+    // Mark bitmap region as used in the bitmap itself
+    uint64_t bitmap_pages = (bitmapReserved + 4095) / 4096;
+    for (uint64_t i = 0; i < bitmap_pages; i++) {
+        uint64_t byte_index = i / 8;
+        uint64_t bit_index = i % 8;
+        bitmap[byte_index] = setBit(bitmap[byte_index], bit_index, 1);
+    }
+    
+    printk("[PMM] Reserved %d pages for bitmap at %p\n", bitmap_pages, (void*)maxBegin);
+    printk("[PMM] First allocatable page at %p\n", (void*)(maxBegin + bitmapReserved));
+    printk("[argaldOS:kernel:PMM] Successfully initialized physical memory allocator.\n");
 }
 
 // just a basic utility
@@ -99,24 +103,29 @@ static uint8_t setBit(uint8_t byte, uint8_t bitPosition, bool setTo) {
 // this doesn't take a size. It will always allocate 1024 bytes
 #include <stdint.h>
 void* kmalloc() {
-    printk("[PMM] kmalloc: maxBegin=%p maxLength=%x bitmapReserved=%x hhdm=%p\n", (void*)kernel.largestSect.maxBegin, kernel.largestSect.maxLength, kernel.largestSect.bitmapReserved, (void*)kernel.hhdm);
-    // go to the start of the largest part of memory, and look thru it.
+    printk("[PMM] kmalloc: maxBegin=%p maxLength=%x bitmapReserved=%x hhdm=%p\n", 
+           (void*)kernel.largestSect.maxBegin, kernel.largestSect.maxLength, 
+           kernel.largestSect.bitmapReserved, (void*)kernel.hhdm);
+    
+    // Calculate bitmap base address correctly
+    uint8_t* bitmap_base = (uint8_t*)(kernel.largestSect.maxBegin + kernel.hhdm);
+    
+    // Calculate start of allocatable memory (after bitmap)
+    uint64_t data_start = kernel.largestSect.maxBegin + kernel.largestSect.bitmapReserved;
+    
+    // Search for a free page
     for (int b = 0; b < kernel.largestSect.bitmapReserved; b++) {
-        // look through each bit checking if it's avaliable. If it is, return the matching memory address.
+        uint8_t* bitmap_ptr = bitmap_base + b;
         for (int y = 0; y < 8; y++) {
-            uint8_t* bitmap_ptr = (uint8_t*)(kernel.largestSect.maxBegin + b + kernel.hhdm);
             if (!getBit(*bitmap_ptr, y)) {
-                // avaliable frame found!
-                // set it to be used
+                // Mark page as used
                 *bitmap_ptr = setBit(*bitmap_ptr, y, 1);
-                // the actual frame index is just `byte + bit`
-                void* addr = (void*)(kernel.largestSect.maxBegin + (((b * 8) + y) * 4096));
-                printk("[PMM] kmalloc: allocated addr=%p (b=%d y=%d)\n", addr, b, y);
-                // Ensure page alignment
-                if (((uint64_t)addr & 0xFFF) != 0) {
-                    printk("[PMM] kmalloc returned non-page-aligned address!\n");
-                    addr = (void*)(((uint64_t)addr + 0xFFF) & ~0xFFFULL);
-                }
+                
+                // Calculate physical address after bitmap region
+                uint64_t frame_index = (b * 8) + y;
+                void* addr = (void*)(data_start + (frame_index * 4096));
+                
+                printk("[PMM] kmalloc: allocated addr=%p (frame=%d)\n", addr, frame_index);
                 return addr;
             }
         }

@@ -9,12 +9,19 @@ static uint64_t* pml4 = 0;
 
 // Allocate a new page-aligned page table
 static uint64_t* alloc_table(int do_map) {
+    printk("[paging] alloc_table: starting allocation\n");
     uint64_t* table = (uint64_t*)kmalloc();
+    if (!table) {
+        printk("[paging] alloc_table: kmalloc failed!\n");
+        return NULL;
+    }
     printk("[paging] alloc_table: kmalloc returned %p (HHDM %p)\n", table, (void*)((uint64_t)table + kernel.hhdm));
     printk("[paging] hhdm value: %p\n", (void*)kernel.hhdm);
+    printk("[paging] attempting HHDM write test...\n");
     volatile uint64_t *test = (uint64_t*)((uint64_t)table + kernel.hhdm);
+    printk("[paging] HHDM pointer created: %p\n", test);
     *test = 0xdeadbeef;
-    printk("[paging] wrote to hhdm-mapped page table\n");
+    printk("[paging] wrote 0xdeadbeef to hhdm-mapped page table\n");
     if (do_map) {
         map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
         printk("[paging] alloc_table: mapped %p\n", table);
@@ -25,9 +32,13 @@ static uint64_t* alloc_table(int do_map) {
 }
 
 void init_paging() {
-    printk("[paging] init_paging: start\n");
+    printk("[paging] init_paging: start (HHDM offset: %p)\n", (void*)kernel.hhdm);
     pml4 = alloc_table(0); // Do not map PML4 itself
-    printk("[paging] init_paging: pml4 at %p\n", pml4);
+    if (!pml4) {
+        printk("[paging] init_paging: FATAL - Failed to allocate PML4\n");
+        return;
+    }
+    printk("[paging] init_paging: pml4 allocated at phys=%p (HHDM=%p)\n", pml4, (void*)((uint64_t)pml4 + kernel.hhdm));
     // Identity map first 16MB for kernel and user (for demo)
     for (uint64_t addr = 0x100000; addr < 0x1000000; addr += PAGE_SIZE) {
         printk("[paging] identity map: virt=%p phys=%p\n", (void*)addr, (void*)addr);
@@ -47,8 +58,10 @@ void init_paging() {
 
 // Helper to get/create next level table
 static uint64_t* get_next_table(uint64_t* table, int index, int create) {
-    printk("[paging] get_next_table: table=%p index=%d (identity-mapped test)\n", table, index);
-    printk("[paging] get_next_table: *table[index]=%p\n", (void*)table[index]);
+    printk("[paging] get_next_table: table phys=%p HHDM=%p index=%d\n", 
+           table, (void*)((uint64_t)table + kernel.hhdm), index);
+    volatile uint64_t* hhdm_table = (uint64_t*)((uint64_t)table + kernel.hhdm);
+    printk("[paging] get_next_table: reading entry %d = %p\n", index, (void*)hhdm_table[index]);
     if (!(table[index] & PAGE_PRESENT)) {
         if (!create) return 0;
         uint64_t* next = alloc_table(1); // Map lower-level tables
