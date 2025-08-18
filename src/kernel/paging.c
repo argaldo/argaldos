@@ -3,6 +3,7 @@
 #include <kernel/kernel.h>
 #include <kernel/pmm.h>
 #include <string.h>
+#include <kernel/util/utils.h>
 
 // Track page tables we create for later mapping
 #define MAX_EARLY_PAGE_TABLES 256
