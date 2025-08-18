@@ -132,6 +132,132 @@ void init_paging() {
     pt[pt_idx] = (code_page) | PAGE_PRESENT | PAGE_RW;
     
     printk("[paging] Mapped HHDM code page successfully\n");
+
+    // Get current stack pointer to ensure stack is mapped
+    uint64_t stack_ptr;
+    asm volatile ("mov %%rsp, %0" : "=r"(stack_ptr));
+    uint64_t stack_page = stack_ptr & ~0xFFFULL;
+    
+    // Map a few pages around the stack pointer to ensure we have enough stack space
+    for (uint64_t addr = stack_page - 0x4000; addr <= stack_page + 0x4000; addr += 0x1000) {
+        printk("[paging] Mapping stack page at %p\n", (void*)addr);
+        
+        // Map both identity and HHDM for stack
+        // Identity mapping
+        pml4_idx = (addr >> 39) & 0x1FF;
+        pdpt_idx = (addr >> 30) & 0x1FF;
+        pd_idx = (addr >> 21) & 0x1FF;
+        pt_idx = (addr >> 12) & 0x1FF;
+        
+        if (!(hhdm_pml4[pml4_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pdpt = alloc_table(0);
+            hhdm_pml4[pml4_idx] = ((uint64_t)new_pdpt) | PAGE_PRESENT | PAGE_RW;
+        }
+        pdpt = (uint64_t*)((hhdm_pml4[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pd = alloc_table(0);
+            pdpt[pdpt_idx] = ((uint64_t)new_pd) | PAGE_PRESENT | PAGE_RW;
+        }
+        pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        if (!(pd[pd_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pt = alloc_table(0);
+            pd[pd_idx] = ((uint64_t)new_pt) | PAGE_PRESENT | PAGE_RW;
+        }
+        pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        pt[pt_idx] = addr | PAGE_PRESENT | PAGE_RW;
+        
+        // HHDM mapping for stack
+        uint64_t hhdm_addr = addr + kernel.hhdm;
+        pml4_idx = (hhdm_addr >> 39) & 0x1FF;
+        pdpt_idx = (hhdm_addr >> 30) & 0x1FF;
+        pd_idx = (hhdm_addr >> 21) & 0x1FF;
+        pt_idx = (hhdm_addr >> 12) & 0x1FF;
+        
+        if (!(hhdm_pml4[pml4_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pdpt = alloc_table(0);
+            hhdm_pml4[pml4_idx] = ((uint64_t)new_pdpt) | PAGE_PRESENT | PAGE_RW;
+        }
+        pdpt = (uint64_t*)((hhdm_pml4[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pd = alloc_table(0);
+            pdpt[pdpt_idx] = ((uint64_t)new_pd) | PAGE_PRESENT | PAGE_RW;
+        }
+        pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        if (!(pd[pd_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pt = alloc_table(0);
+            pd[pd_idx] = ((uint64_t)new_pt) | PAGE_PRESENT | PAGE_RW;
+        }
+        pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        pt[pt_idx] = addr | PAGE_PRESENT | PAGE_RW;
+    }
+    
+    printk("[paging] Mapped stack pages successfully\n");
+
+    // Map the page table pages themselves in both identity and HHDM space
+    for (int i = 0; i < num_early_page_tables; i++) {
+        uint64_t pt_addr = early_page_tables[i];
+        uint64_t hhdm_pt_addr = pt_addr + kernel.hhdm;
+        
+        // Identity map
+        pml4_idx = (pt_addr >> 39) & 0x1FF;
+        pdpt_idx = (pt_addr >> 30) & 0x1FF;
+        pd_idx = (pt_addr >> 21) & 0x1FF;
+        pt_idx = (pt_addr >> 12) & 0x1FF;
+        
+        if (!(hhdm_pml4[pml4_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pdpt = alloc_table(0);
+            hhdm_pml4[pml4_idx] = ((uint64_t)new_pdpt) | PAGE_PRESENT | PAGE_RW;
+        }
+        pdpt = (uint64_t*)((hhdm_pml4[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pd = alloc_table(0);
+            pdpt[pdpt_idx] = ((uint64_t)new_pd) | PAGE_PRESENT | PAGE_RW;
+        }
+        pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        if (!(pd[pd_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pt = alloc_table(0);
+            pd[pd_idx] = ((uint64_t)new_pt) | PAGE_PRESENT | PAGE_RW;
+        }
+        pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        pt[pt_idx] = pt_addr | PAGE_PRESENT | PAGE_RW;
+        
+        // HHDM map
+        pml4_idx = (hhdm_pt_addr >> 39) & 0x1FF;
+        pdpt_idx = (hhdm_pt_addr >> 30) & 0x1FF;
+        pd_idx = (hhdm_pt_addr >> 21) & 0x1FF;
+        pt_idx = (hhdm_pt_addr >> 12) & 0x1FF;
+        
+        if (!(hhdm_pml4[pml4_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pdpt = alloc_table(0);
+            hhdm_pml4[pml4_idx] = ((uint64_t)new_pdpt) | PAGE_PRESENT | PAGE_RW;
+        }
+        pdpt = (uint64_t*)((hhdm_pml4[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pd = alloc_table(0);
+            pdpt[pdpt_idx] = ((uint64_t)new_pd) | PAGE_PRESENT | PAGE_RW;
+        }
+        pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        if (!(pd[pd_idx] & PAGE_PRESENT)) {
+            uint64_t* new_pt = alloc_table(0);
+            pd[pd_idx] = ((uint64_t)new_pt) | PAGE_PRESENT | PAGE_RW;
+        }
+        pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
+        
+        pt[pt_idx] = pt_addr | PAGE_PRESENT | PAGE_RW;
+    }
+    
+    printk("[paging] Mapped all page tables successfully\n");
     // Load PML4 into CR3
     printk("[paging] init_paging: loading CR3 with %p\n", pml4);
     asm volatile ("mov %0, %%cr3" : : "r"(pml4));
