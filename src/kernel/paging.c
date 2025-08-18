@@ -328,26 +328,60 @@ void init_paging() {
         map_range(hhdm_pml4, kernel.hhdm + pt_addr, kernel.hhdm + pt_addr + 0x1000, PAGE_PRESENT | PAGE_RW);
     }
 
-    // Enable write-protect bit in CR0 to enable write protection
+    // Verify critical page table entries before switching
+    printk("[paging] Verifying page table entries:\n");
+    
+    // Get current instruction pointer to verify code mapping
+    uint64_t rip;
+    asm volatile ("lea (%%rip), %0" : "=r"(rip));
+    uint64_t code_page = rip & ~0xFFFULL;
+    
+    // Check code page mapping
+    int pml4_idx = (code_page >> 39) & 0x1FF;
+    int pdpt_idx = (code_page >> 30) & 0x1FF;
+    int pd_idx   = (code_page >> 21) & 0x1FF;
+    int pt_idx   = (code_page >> 12) & 0x1FF;
+    
+    volatile uint64_t* hhdm_pml4_check = (uint64_t*)((uint64_t)pml4 + kernel.hhdm);
+    printk("[paging] Code page %p mapping:\n", (void*)code_page);
+    printk("  PML4[%d] = %p\n", pml4_idx, (void*)hhdm_pml4_check[pml4_idx]);
+    
+    if (hhdm_pml4_check[pml4_idx] & PAGE_PRESENT) {
+        volatile uint64_t* pdpt = (uint64_t*)((hhdm_pml4_check[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+        printk("  PDPT[%d] = %p\n", pdpt_idx, (void*)pdpt[pdpt_idx]);
+        
+        if (pdpt[pdpt_idx] & PAGE_PRESENT) {
+            volatile uint64_t* pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
+            printk("  PD[%d] = %p\n", pd_idx, (void*)pd[pd_idx]);
+            
+            if (pd[pd_idx] & PAGE_PRESENT) {
+                volatile uint64_t* pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
+                printk("  PT[%d] = %p\n", pt_idx, (void*)pt[pt_idx]);
+            }
+        }
+    }
+    
+    // Flush TLB before paging change
+    asm volatile ("invlpg (%0)" :: "r"(pml4) : "memory");
+    
+    // First load CR3 with physical address of PML4
+    printk("[paging] Loading CR3 with %p\n", pml4);
+    asm volatile ("mov %0, %%cr3" :: "r"(pml4) : "memory");
+    
+    // Quick test that we can still execute
+    asm volatile ("nop");
+    printk("[paging] CR3 loaded successfully\n");
+    
+    // Now update CR0
     uint64_t cr0;
     asm volatile ("mov %%cr0, %0" : "=r"(cr0));
     cr0 |= 0x10000; // Set WP bit
+    printk("[paging] Updating CR0 to %p\n", (void*)cr0);
+    asm volatile ("mov %0, %%cr0" :: "r"(cr0) : "memory");
     
-    // Ensure TLB is clear
-    asm volatile ("invlpg (%0)" :: "r"(pml4) : "memory");
-    
-    // Now load CR3 with physical address of PML4
-    printk("[paging] init_paging: loading CR3 with %p\n", pml4);
-    asm volatile (
-        "mov %0, %%cr3\n\t"
-        "mov %1, %%cr0"
-        : : "r"(pml4), "r"(cr0) : "memory"
-    );
-    
-    // Verify we can still execute
+    // Final verification
     asm volatile ("nop");
-    
-    printk("[paging] Paging enabled successfully.\n");
+    printk("[paging] Paging enabled successfully\n");
 }
 
 // Helper to get/create next level table
