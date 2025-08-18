@@ -55,8 +55,8 @@ static void map_range(volatile uint64_t* hhdm_pml4_ptr, uint64_t virt_start, uin
         int pd_idx = (vaddr >> 21) & 0x1FF;
         int pt_idx = (vaddr >> 12) & 0x1FF;
 
-        printk("[paging] Mapping v=%p to p=%p (indices: %d,%d,%d,%d)\n", 
-               (void*)vaddr, (void*)paddr, pml4_idx, pdpt_idx, pd_idx, pt_idx);
+        //printk("[paging] Mapping v=%p to p=%p (indices: %d,%d,%d,%d)\n", 
+        //       (void*)vaddr, (void*)paddr, pml4_idx, pdpt_idx, pd_idx, pt_idx);
 
         volatile uint64_t* pdpt;
         if (!(hhdm_pml4_ptr[pml4_idx] & PAGE_PRESENT)) {
@@ -87,7 +87,7 @@ static void map_range(volatile uint64_t* hhdm_pml4_ptr, uint64_t virt_start, uin
 
         // Store physical address in page table
         pt[pt_idx] = paddr | flags | PAGE_PRESENT;
-        printk("[paging] PT[%d] = %p\n", pt_idx, (void*)(paddr | flags | PAGE_PRESENT));
+        //printk("[paging] PT[%d] = %p\n", pt_idx, (void*)(paddr | flags | PAGE_PRESENT));
     }
 }
 
@@ -384,12 +384,52 @@ void init_paging() {
         }
     }
     
+    // Additional verification before CR3 load
+    uint64_t phys_pml4 = (uint64_t)pml4;
+    uint64_t current_cr3;
+    asm volatile ("mov %%cr3, %0" : "=r"(current_cr3));
+    
+    printk("[paging] Current CR3: %p\n", (void*)current_cr3);
+    printk("[paging] About to load new CR3 (phys=%p)\n", (void*)phys_pml4);
+    
+    // Verify PML4 is page aligned
+    if (phys_pml4 & 0xFFF) {
+        printk("[paging] FATAL: PML4 address %p is not page aligned!\n", (void*)phys_pml4);
+        return;
+    }
+    
+    // Double check the identity mapping for the next instruction
+    uint64_t next_rip;
+    asm volatile ("lea 1f(%%rip), %0; 1:" : "=r"(next_rip));
+    printk("[paging] Verifying mapping for next instruction at %p\n", (void*)next_rip);
+    
+    int v_pml4_idx = (next_rip >> 39) & 0x1FF;
+    int v_pdpt_idx = (next_rip >> 30) & 0x1FF;
+    int v_pd_idx = (next_rip >> 21) & 0x1FF;
+    int v_pt_idx = (next_rip >> 12) & 0x1FF;
+    
+    volatile uint64_t* hhdm_pml4_ptr = (uint64_t*)((uint64_t)pml4 + kernel.hhdm);
+    volatile uint64_t* v_pdpt = (uint64_t*)((hhdm_pml4_ptr[v_pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+    volatile uint64_t* v_pd = (uint64_t*)((v_pdpt[v_pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
+    volatile uint64_t* v_pt = (uint64_t*)((v_pd[v_pd_idx] & ~0xFFFULL) + kernel.hhdm);
+    
+    printk("[paging] Next instruction mapping chain:\n");
+    printk("  PML4[%d] = %p\n", v_pml4_idx, (void*)hhdm_pml4_ptr[v_pml4_idx]);
+    printk("  PDPT[%d] = %p\n", v_pdpt_idx, (void*)v_pdpt[v_pdpt_idx]);
+    printk("  PD[%d] = %p\n", v_pd_idx, (void*)v_pd[v_pd_idx]);
+    printk("  PT[%d] = %p\n", v_pt_idx, (void*)v_pt[v_pt_idx]);
+    
     // Flush TLB before paging change
     asm volatile ("invlpg (%0)" :: "r"(pml4) : "memory");
     
-    // First load CR3 with physical address of PML4
-    printk("[paging] Loading CR3 with %p\n", pml4);
-    asm volatile ("mov %0, %%cr3" :: "r"(pml4) : "memory");
+    // Load CR3 with physical address of PML4
+    printk("[paging] Loading CR3 with physical address %p\n", (void*)phys_pml4);
+    __asm__ __volatile__ (
+        "cli\n\t"              // Disable interrupts
+        "mov %0, %%cr3\n\t"   // Load CR3
+        "sti\n\t"              // Re-enable interrupts
+        :: "r"(phys_pml4) : "memory"
+    );
     
     // Quick test that we can still execute
     asm volatile ("nop");
