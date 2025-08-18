@@ -44,7 +44,7 @@ static uint64_t* alloc_table(int do_map) {
     return table;
 }
 
-static void map_range(volatile uint64_t* hhdm_pml4, uint64_t start, uint64_t end, uint64_t flags) {
+static void map_range(volatile uint64_t* hhdm_pml4_ptr, uint64_t start, uint64_t end, uint64_t flags) {
     for (uint64_t addr = start & ~0xFFFULL; addr < end; addr += 0x1000) {
         int pml4_idx = (addr >> 39) & 0x1FF;
         int pdpt_idx = (addr >> 30) & 0x1FF;
@@ -52,11 +52,11 @@ static void map_range(volatile uint64_t* hhdm_pml4, uint64_t start, uint64_t end
         int pt_idx = (addr >> 12) & 0x1FF;
 
         volatile uint64_t* pdpt;
-        if (!(hhdm_pml4[pml4_idx] & PAGE_PRESENT)) {
+        if (!(hhdm_pml4_ptr[pml4_idx] & PAGE_PRESENT)) {
             uint64_t* new_pdpt = alloc_table(0);
-            hhdm_pml4[pml4_idx] = ((uint64_t)new_pdpt) | PAGE_PRESENT | PAGE_RW;
+            hhdm_pml4_ptr[pml4_idx] = ((uint64_t)new_pdpt) | PAGE_PRESENT | PAGE_RW;
         }
-        pdpt = (uint64_t*)((hhdm_pml4[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+        pdpt = (uint64_t*)((hhdm_pml4_ptr[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
 
         volatile uint64_t* pd;
         if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
@@ -90,31 +90,31 @@ void init_paging() {
     }
     add_early_page_table((uint64_t)pml4);
     
-    volatile uint64_t* hhdm_pml4 = (uint64_t*)((uint64_t)pml4 + kernel.hhdm);
-    printk("[paging] init_paging: pml4 allocated at phys=%p (HHDM=%p)\n", pml4, (void*)hhdm_pml4);
+    volatile uint64_t* hhdm_pml4_ptr = (uint64_t*)((uint64_t)pml4 + kernel.hhdm);
+    printk("[paging] init_paging: pml4 allocated at phys=%p (HHDM=%p)\n", pml4, (void*)hhdm_pml4_ptr);
 
     // 1. Identity map first 2MB (crucial bootloader and kernel areas)
     printk("[paging] Mapping first 2MB identity...\n");
-    map_range(hhdm_pml4, 0, 0x200000, PAGE_PRESENT | PAGE_RW);
+    map_range(hhdm_pml4_ptr, 0, 0x200000, PAGE_PRESENT | PAGE_RW);
 
     // 2. Get and map the current code region
     uint64_t code_start = (uint64_t)&init_paging & ~0xFFFULL;
     printk("[paging] Mapping code region at %p\n", (void*)code_start);
-    map_range(hhdm_pml4, code_start & ~0x1FFFFF, (code_start + 0x200000) & ~0xFFF, PAGE_PRESENT | PAGE_RW);
+    map_range(hhdm_pml4_ptr, code_start & ~0x1FFFFF, (code_start + 0x200000) & ~0xFFF, PAGE_PRESENT | PAGE_RW);
 
     // 3. Get and map the current stack region
-    uint64_t stack_ptr;
-    asm volatile ("mov %%rsp, %0" : "=r"(stack_ptr));
-    uint64_t stack_start = stack_ptr & ~0x1FFFFF; // Round down to 2MB
+    uint64_t current_rsp;
+    asm volatile ("mov %%rsp, %0" : "=r"(current_rsp));
+    uint64_t stack_start = current_rsp & ~0x1FFFFF; // Round down to 2MB
     printk("[paging] Mapping stack region at %p\n", (void*)stack_start);
-    map_range(hhdm_pml4, stack_start, stack_start + 0x200000, PAGE_PRESENT | PAGE_RW);
+    map_range(hhdm_pml4_ptr, stack_start, stack_start + 0x200000, PAGE_PRESENT | PAGE_RW);
 
     // 4. Map the same regions in HHDM
     printk("[paging] Mapping HHDM regions...\n");
-    map_range(hhdm_pml4, kernel.hhdm, kernel.hhdm + 0x200000, PAGE_PRESENT | PAGE_RW); // First 2MB
-    map_range(hhdm_pml4, kernel.hhdm + (code_start & ~0x1FFFFF), 
+    map_range(hhdm_pml4_ptr, kernel.hhdm, kernel.hhdm + 0x200000, PAGE_PRESENT | PAGE_RW); // First 2MB
+    map_range(hhdm_pml4_ptr, kernel.hhdm + (code_start & ~0x1FFFFF), 
              kernel.hhdm + ((code_start + 0x200000) & ~0xFFF), PAGE_PRESENT | PAGE_RW);
-    map_range(hhdm_pml4, kernel.hhdm + stack_start, 
+    map_range(hhdm_pml4_ptr, kernel.hhdm + stack_start, 
              kernel.hhdm + stack_start + 0x200000, PAGE_PRESENT | PAGE_RW);
     
     // First set up essential kernel mappings
