@@ -45,35 +45,49 @@ static uint64_t* alloc_table(int do_map) {
     return table;
 }
 
-static void map_range(volatile uint64_t* hhdm_pml4_ptr, uint64_t start, uint64_t end, uint64_t flags) {
-    for (uint64_t addr = start & ~0xFFFULL; addr < end; addr += 0x1000) {
-        int pml4_idx = (addr >> 39) & 0x1FF;
-        int pdpt_idx = (addr >> 30) & 0x1FF;
-        int pd_idx = (addr >> 21) & 0x1FF;
-        int pt_idx = (addr >> 12) & 0x1FF;
+static void map_range(volatile uint64_t* hhdm_pml4_ptr, uint64_t virt_start, uint64_t virt_end, uint64_t flags) {
+    for (uint64_t vaddr = virt_start & ~0xFFFULL; vaddr < virt_end; vaddr += 0x1000) {
+        // For identity mapping, physical address is the same as virtual for low addresses
+        uint64_t paddr = vaddr >= kernel.hhdm ? (vaddr - kernel.hhdm) : vaddr;
+        
+        int pml4_idx = (vaddr >> 39) & 0x1FF;
+        int pdpt_idx = (vaddr >> 30) & 0x1FF;
+        int pd_idx = (vaddr >> 21) & 0x1FF;
+        int pt_idx = (vaddr >> 12) & 0x1FF;
+
+        printk("[paging] Mapping v=%p to p=%p (indices: %d,%d,%d,%d)\n", 
+               (void*)vaddr, (void*)paddr, pml4_idx, pdpt_idx, pd_idx, pt_idx);
 
         volatile uint64_t* pdpt;
         if (!(hhdm_pml4_ptr[pml4_idx] & PAGE_PRESENT)) {
             uint64_t* new_pdpt = alloc_table(0);
+            // Store physical address in page table
             hhdm_pml4_ptr[pml4_idx] = ((uint64_t)new_pdpt) | PAGE_PRESENT | PAGE_RW;
+            printk("[paging] New PDPT at p=%p\n", new_pdpt);
         }
         pdpt = (uint64_t*)((hhdm_pml4_ptr[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
 
         volatile uint64_t* pd;
         if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
             uint64_t* new_pd = alloc_table(0);
+            // Store physical address in page table
             pdpt[pdpt_idx] = ((uint64_t)new_pd) | PAGE_PRESENT | PAGE_RW;
+            printk("[paging] New PD at p=%p\n", new_pd);
         }
         pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
 
         volatile uint64_t* pt;
         if (!(pd[pd_idx] & PAGE_PRESENT)) {
             uint64_t* new_pt = alloc_table(0);
+            // Store physical address in page table
             pd[pd_idx] = ((uint64_t)new_pt) | PAGE_PRESENT | PAGE_RW;
+            printk("[paging] New PT at p=%p\n", new_pt);
         }
         pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
 
-        pt[pt_idx] = addr | flags | PAGE_PRESENT;
+        // Store physical address in page table
+        pt[pt_idx] = paddr | flags | PAGE_PRESENT;
+        printk("[paging] PT[%d] = %p\n", pt_idx, (void*)(paddr | flags | PAGE_PRESENT));
     }
 }
 
@@ -156,10 +170,11 @@ void init_paging() {
     }
     volatile uint64_t* pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
     
-    // Map the page
-    pt[pt_idx] = (code_page) | PAGE_PRESENT | PAGE_RW;
+    // Map the page - code_page is both virtual and physical for identity mapping
+    uint64_t phys_code_page = code_page; // In identity mapping, they're the same
+    pt[pt_idx] = phys_code_page | PAGE_PRESENT | PAGE_RW;
     
-    printk("[paging] Mapped initial code page successfully\n");
+    printk("[paging] Mapped initial code page successfully (phys=%p)\n", (void*)phys_code_page);
     
     // Now map HHDM region for the code page
     uint64_t hhdm_addr = code_page + kernel.hhdm;
@@ -226,7 +241,10 @@ void init_paging() {
         }
         pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
         
-        pt[pt_idx] = addr | PAGE_PRESENT | PAGE_RW;
+        // For identity mapping, addr is both virtual and physical
+        uint64_t phys_stack_addr = addr;
+        pt[pt_idx] = phys_stack_addr | PAGE_PRESENT | PAGE_RW;
+        printk("[paging] Mapped identity stack page phys=%p\n", (void*)phys_stack_addr);
         
         // HHDM mapping for stack
         uint64_t hhdm_addr = addr + kernel.hhdm;
@@ -287,7 +305,10 @@ void init_paging() {
         }
         pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
         
-        pt[pt_idx] = pt_addr | PAGE_PRESENT | PAGE_RW;
+        // pt_addr is both virtual and physical in identity mapping
+        uint64_t phys_pt_addr = pt_addr;
+        pt[pt_idx] = phys_pt_addr | PAGE_PRESENT | PAGE_RW;
+        printk("[paging] Mapped identity page table phys=%p\n", (void*)phys_pt_addr);
         
         // HHDM map
         pml4_idx = (hhdm_pt_addr >> 39) & 0x1FF;
@@ -313,7 +334,9 @@ void init_paging() {
         }
         pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
         
-        pt[pt_idx] = pt_addr | PAGE_PRESENT | PAGE_RW;
+        // For HHDM mapping, we still need physical address
+        pt[pt_idx] = phys_pt_addr | PAGE_PRESENT | PAGE_RW;
+        printk("[paging] Mapped HHDM page table phys=%p to virt=%p\n", (void*)phys_pt_addr, (void*)hhdm_pt_addr);
     }
     
     printk("[paging] Mapped all page tables successfully\n");
