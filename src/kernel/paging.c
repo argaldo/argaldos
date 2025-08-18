@@ -332,31 +332,31 @@ void init_paging() {
     printk("[paging] Verifying page table entries:\n");
     
     // Get current instruction pointer to verify code mapping
-    uint64_t rip;
-    asm volatile ("lea (%%rip), %0" : "=r"(rip));
-    uint64_t code_page = rip & ~0xFFFULL;
+    uint64_t current_rip;
+    asm volatile ("lea (%%rip), %0" : "=r"(current_rip));
+    uint64_t verify_addr = current_rip & ~0xFFFULL;
     
     // Check code page mapping
-    int pml4_idx = (code_page >> 39) & 0x1FF;
-    int pdpt_idx = (code_page >> 30) & 0x1FF;
-    int pd_idx   = (code_page >> 21) & 0x1FF;
-    int pt_idx   = (code_page >> 12) & 0x1FF;
+    int verify_pml4_i = (verify_addr >> 39) & 0x1FF;
+    int verify_pdpt_i = (verify_addr >> 30) & 0x1FF;
+    int verify_pd_i   = (verify_addr >> 21) & 0x1FF;
+    int verify_pt_i   = (verify_addr >> 12) & 0x1FF;
     
-    volatile uint64_t* hhdm_pml4_check = (uint64_t*)((uint64_t)pml4 + kernel.hhdm);
-    printk("[paging] Code page %p mapping:\n", (void*)code_page);
-    printk("  PML4[%d] = %p\n", pml4_idx, (void*)hhdm_pml4_check[pml4_idx]);
+    volatile uint64_t* verify_pml4 = (uint64_t*)((uint64_t)pml4 + kernel.hhdm);
+    printk("[paging] Verifying address %p mapping:\n", (void*)verify_addr);
+    printk("  PML4[%d] = %p\n", verify_pml4_i, (void*)verify_pml4[verify_pml4_i]);
     
-    if (hhdm_pml4_check[pml4_idx] & PAGE_PRESENT) {
-        volatile uint64_t* pdpt = (uint64_t*)((hhdm_pml4_check[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
-        printk("  PDPT[%d] = %p\n", pdpt_idx, (void*)pdpt[pdpt_idx]);
+    if (verify_pml4[verify_pml4_i] & PAGE_PRESENT) {
+        volatile uint64_t* verify_pdpt = (uint64_t*)((verify_pml4[verify_pml4_i] & ~0xFFFULL) + kernel.hhdm);
+        printk("  PDPT[%d] = %p\n", verify_pdpt_i, (void*)verify_pdpt[verify_pdpt_i]);
         
-        if (pdpt[pdpt_idx] & PAGE_PRESENT) {
-            volatile uint64_t* pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
-            printk("  PD[%d] = %p\n", pd_idx, (void*)pd[pd_idx]);
+        if (verify_pdpt[verify_pdpt_i] & PAGE_PRESENT) {
+            volatile uint64_t* verify_pd = (uint64_t*)((verify_pdpt[verify_pdpt_i] & ~0xFFFULL) + kernel.hhdm);
+            printk("  PD[%d] = %p\n", verify_pd_i, (void*)verify_pd[verify_pd_i]);
             
-            if (pd[pd_idx] & PAGE_PRESENT) {
-                volatile uint64_t* pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
-                printk("  PT[%d] = %p\n", pt_idx, (void*)pt[pt_idx]);
+            if (verify_pd[verify_pd_i] & PAGE_PRESENT) {
+                volatile uint64_t* verify_pt = (uint64_t*)((verify_pd[verify_pd_i] & ~0xFFFULL) + kernel.hhdm);
+                printk("  PT[%d] = %p\n", verify_pt_i, (void*)verify_pt[verify_pt_i]);
             }
         }
     }
