@@ -40,11 +40,7 @@ static uint64_t* alloc_table(int do_map) {
     }
     printk("[paging] alloc_table: finished zeroing table\n");
 
-    if (do_map && pml4 != 0) {
-        // Only try to map if we're not setting up the initial PML4
-        map_page((uint64_t)table, (uint64_t)table, PAGE_PRESENT | PAGE_RW);
-        printk("[paging] alloc_table: mapped %p\n", table);
-    }
+    // We no longer try to map tables here to avoid recursion
     return table;
 }
 
@@ -63,44 +59,79 @@ void init_paging() {
     add_early_page_table((uint64_t)pml4);
     printk("[paging] init_paging: pml4 allocated at phys=%p (HHDM=%p)\n", pml4, (void*)((uint64_t)pml4 + kernel.hhdm));
     
-    // First set up minimal page tables for kernel space
-    printk("[paging] Setting up initial kernel mappings...\n");
-    // Map first 1MB for kernel (reduced range for testing)
-    printk("[paging] Starting initial 1MB identity mapping...\n");
-    for (uint64_t addr = 0x100000; addr < 0x200000; addr += PAGE_SIZE) {
-        printk("[paging] Attempting to map: virt=%p phys=%p\n", (void*)addr, (void*)addr);
-        // Get indexes for debugging
-        int pml4_idx = (addr >> 39) & 0x1FF;
-        int pdpt_idx = (addr >> 30) & 0x1FF;
-        int pd_idx = (addr >> 21) & 0x1FF;
-        int pt_idx = (addr >> 12) & 0x1FF;
-        printk("[paging] Map indexes: PML4=%d PDPT=%d PD=%d PT=%d\n", 
-               pml4_idx, pdpt_idx, pd_idx, pt_idx);
-        
-        // Access PML4 through HHDM for debug
-        volatile uint64_t* hhdm_pml4 = (uint64_t*)((uint64_t)pml4 + kernel.hhdm);
-        printk("[paging] Current PML4[%d] = %p\n", pml4_idx, (void*)hhdm_pml4[pml4_idx]);
-        
-        map_page(addr, addr, PAGE_PRESENT | PAGE_RW | PAGE_USER);
-        printk("[paging] Mapped address %p successfully\n", (void*)addr);
-    }
-    printk("[paging] Completed initial 1MB identity mapping\n");
+    // First set up essential kernel mappings
+    printk("[paging] Setting up essential mappings...\n");
     
-    // Now map all page tables we created
-    printk("[paging] Starting to map %d page tables...\n", num_early_page_tables);
-    for (int i = 0; i < num_early_page_tables; i++) {
-        uint64_t pt_addr = early_page_tables[i];
-        printk("[paging] Mapping page table %d: phys=%p\n", i, (void*)pt_addr);
-        // Map each page table to itself
-        map_page(pt_addr, pt_addr, PAGE_PRESENT | PAGE_RW);
-        printk("[paging] Successfully mapped page table %d\n", i);
+    // Identity map current code page (containing init_paging function)
+    uint64_t code_page = ((uint64_t)&init_paging) & ~0xFFFULL;
+    
+    // First map one page directly through page table manipulation
+    int pml4_idx = (code_page >> 39) & 0x1FF;
+    int pdpt_idx = (code_page >> 30) & 0x1FF;
+    int pd_idx = (code_page >> 21) & 0x1FF;
+    int pt_idx = (code_page >> 12) & 0x1FF;
+    
+    printk("[paging] Mapping code page at %p\n", (void*)code_page);
+    
+    // Create page tables manually
+    volatile uint64_t* hhdm_pml4 = (uint64_t*)((uint64_t)pml4 + kernel.hhdm);
+    
+    // Allocate PDPT if needed
+    if (!(hhdm_pml4[pml4_idx] & PAGE_PRESENT)) {
+        uint64_t* pdpt = alloc_table(0);
+        hhdm_pml4[pml4_idx] = ((uint64_t)pdpt) | PAGE_PRESENT | PAGE_RW;
     }
-    printk("[paging] Completed mapping all page tables\n");
-    // Map kernel higher half (example: 0xFFFF800000000000)
-    for (uint64_t addr = 0; addr < 0x1000000; addr += PAGE_SIZE) {
-        map_page(0xFFFF800000000000ULL + addr, addr, PAGE_PRESENT | PAGE_RW);
+    volatile uint64_t* pdpt = (uint64_t*)((hhdm_pml4[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+    
+    // Allocate PD if needed
+    if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
+        uint64_t* pd = alloc_table(0);
+        pdpt[pdpt_idx] = ((uint64_t)pd) | PAGE_PRESENT | PAGE_RW;
     }
-    printk("[paging] init_paging: higher-half mapped\n");
+    volatile uint64_t* pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
+    
+    // Allocate PT if needed
+    if (!(pd[pd_idx] & PAGE_PRESENT)) {
+        uint64_t* pt = alloc_table(0);
+        pd[pd_idx] = ((uint64_t)pt) | PAGE_PRESENT | PAGE_RW;
+    }
+    volatile uint64_t* pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
+    
+    // Map the page
+    pt[pt_idx] = (code_page) | PAGE_PRESENT | PAGE_RW;
+    
+    printk("[paging] Mapped initial code page successfully\n");
+    
+    // Now map HHDM region for the code page
+    uint64_t hhdm_addr = code_page + kernel.hhdm;
+    pml4_idx = (hhdm_addr >> 39) & 0x1FF;
+    pdpt_idx = (hhdm_addr >> 30) & 0x1FF;
+    pd_idx = (hhdm_addr >> 21) & 0x1FF;
+    pt_idx = (hhdm_addr >> 12) & 0x1FF;
+    
+    // Repeat the same process for HHDM mapping
+    if (!(hhdm_pml4[pml4_idx] & PAGE_PRESENT)) {
+        uint64_t* pdpt = alloc_table(0);
+        hhdm_pml4[pml4_idx] = ((uint64_t)pdpt) | PAGE_PRESENT | PAGE_RW;
+    }
+    pdpt = (uint64_t*)((hhdm_pml4[pml4_idx] & ~0xFFFULL) + kernel.hhdm);
+    
+    if (!(pdpt[pdpt_idx] & PAGE_PRESENT)) {
+        uint64_t* pd = alloc_table(0);
+        pdpt[pdpt_idx] = ((uint64_t)pd) | PAGE_PRESENT | PAGE_RW;
+    }
+    pd = (uint64_t*)((pdpt[pdpt_idx] & ~0xFFFULL) + kernel.hhdm);
+    
+    if (!(pd[pd_idx] & PAGE_PRESENT)) {
+        uint64_t* pt = alloc_table(0);
+        pd[pd_idx] = ((uint64_t)pt) | PAGE_PRESENT | PAGE_RW;
+    }
+    pt = (uint64_t*)((pd[pd_idx] & ~0xFFFULL) + kernel.hhdm);
+    
+    // Map the HHDM page
+    pt[pt_idx] = (code_page) | PAGE_PRESENT | PAGE_RW;
+    
+    printk("[paging] Mapped HHDM code page successfully\n");
     // Load PML4 into CR3
     printk("[paging] init_paging: loading CR3 with %p\n", pml4);
     asm volatile ("mov %0, %%cr3" : : "r"(pml4));
